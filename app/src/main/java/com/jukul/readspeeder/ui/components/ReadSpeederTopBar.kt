@@ -23,7 +23,7 @@ fun ReadSpeederTopBar(
     onFilterClick: () -> Unit,
 ) {
     TopAppBar(
-        title = { Text(stringResource(R.string.app_name)) },
+        title = { Text(stringResource(R.string.home)) },
         navigationIcon = {
             IconButton(onClick = onNavigationClick) {
                 Icon(

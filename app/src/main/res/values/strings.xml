@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">ReadSpeeder</string>
     <string name="open_navigation">Open navigation</string>
+    <string name="home">Library</string>
     <string name="search">Search</string>
     <string name="filter">Filter</string>
 </resources>
