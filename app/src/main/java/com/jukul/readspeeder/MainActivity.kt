@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -29,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.Font
@@ -40,6 +42,11 @@ import com.jukul.readspeeder.ui.components.DocumentCard
 import com.jukul.readspeeder.ui.components.ReadSpeederMenu
 import com.jukul.readspeeder.ui.components.ReadSpeederTopBar
 import com.jukul.readspeeder.ui.screens.SettingsScreen
+import dev.chrisbanes.haze.blur.HazeProgressive
+import dev.chrisbanes.haze.blur.blurEffect
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.launch
 
 private val InterFontFamily = FontFamily(
@@ -104,6 +111,8 @@ private fun ReadSpeederTheme(content: @Composable () -> Unit) {
 @Composable
 private fun ReadSpeederScreen() {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val hazeBackgroundColor = MaterialTheme.colorScheme.surface
+    val hazeState = rememberHazeState()
     val scope = rememberCoroutineScope()
     var currentDestination by remember { mutableStateOf("home") }
 
@@ -123,6 +132,24 @@ private fun ReadSpeederScreen() {
             modifier = Modifier.fillMaxSize(),
             topBar = {
                 ReadSpeederTopBar(
+                    modifier = Modifier.hazeEffect(state = hazeState) {
+                        blurEffect {
+                            backgroundColor = hazeBackgroundColor
+                            blurRadius = 24.dp
+                            progressive = HazeProgressive.verticalGradient(
+                                startIntensity = 1f,
+                                endIntensity = 0f,
+                                preferPerformance = true,
+                            )
+                        }
+                    }.background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                hazeBackgroundColor,
+                                hazeBackgroundColor.copy(alpha = 0f),
+                            ),
+                        ),
+                    ),
                     title = stringResource(
                         if (currentDestination == "settings") {
                             R.string.settings
@@ -142,8 +169,13 @@ private fun ReadSpeederScreen() {
                     columns = GridCells.Fixed(2),
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(innerPadding),
-                    contentPadding = PaddingValues(16.dp),
+                        .hazeSource(state = hazeState),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        top = innerPadding.calculateTopPadding() + 16.dp,
+                        end = 16.dp,
+                        bottom = innerPadding.calculateBottomPadding() + 16.dp,
+                    ),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {

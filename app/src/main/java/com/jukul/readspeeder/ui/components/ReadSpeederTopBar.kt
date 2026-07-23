@@ -7,17 +7,19 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import com.jukul.readspeeder.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReadSpeederTopBar(
+    modifier: Modifier = Modifier,
     title: String,
     showActions: Boolean,
     onNavigationClick: () -> Unit,
@@ -25,6 +27,7 @@ fun ReadSpeederTopBar(
     onFilterClick: () -> Unit,
 ) {
     TopAppBar(
+        modifier = modifier,
         title = { Text(title) },
         navigationIcon = {
             IconButton(onClick = onNavigationClick) {
@@ -51,7 +54,8 @@ fun ReadSpeederTopBar(
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            containerColor = Color.Transparent,
+            scrolledContainerColor = Color.Transparent,
         ),
     )
 }
