@@ -16,6 +16,7 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -30,6 +31,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.jukul.readspeeder.ui.components.DocumentCard
@@ -37,6 +41,33 @@ import com.jukul.readspeeder.ui.components.ReadSpeederMenu
 import com.jukul.readspeeder.ui.components.ReadSpeederTopBar
 import com.jukul.readspeeder.ui.screens.SettingsScreen
 import kotlinx.coroutines.launch
+
+private val InterFontFamily = FontFamily(
+    Font(R.font.inter_regular, FontWeight.Normal),
+    Font(R.font.inter_medium, FontWeight.Medium),
+    Font(R.font.inter_semibold, FontWeight.SemiBold),
+    Font(R.font.inter_bold, FontWeight.Bold),
+)
+
+private val ReadSpeederTypography = with(Typography()) {
+    Typography(
+        displayLarge = displayLarge.copy(fontFamily = InterFontFamily),
+        displayMedium = displayMedium.copy(fontFamily = InterFontFamily),
+        displaySmall = displaySmall.copy(fontFamily = InterFontFamily),
+        headlineLarge = headlineLarge.copy(fontFamily = InterFontFamily),
+        headlineMedium = headlineMedium.copy(fontFamily = InterFontFamily),
+        headlineSmall = headlineSmall.copy(fontFamily = InterFontFamily),
+        titleLarge = titleLarge.copy(fontFamily = InterFontFamily),
+        titleMedium = titleMedium.copy(fontFamily = InterFontFamily),
+        titleSmall = titleSmall.copy(fontFamily = InterFontFamily),
+        bodyLarge = bodyLarge.copy(fontFamily = InterFontFamily),
+        bodyMedium = bodyMedium.copy(fontFamily = InterFontFamily),
+        bodySmall = bodySmall.copy(fontFamily = InterFontFamily),
+        labelLarge = labelLarge.copy(fontFamily = InterFontFamily),
+        labelMedium = labelMedium.copy(fontFamily = InterFontFamily),
+        labelSmall = labelSmall.copy(fontFamily = InterFontFamily),
+    )
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,6 +96,7 @@ private fun ReadSpeederTheme(content: @Composable () -> Unit) {
 
     MaterialTheme(
         colorScheme = colorScheme,
+        typography = ReadSpeederTypography,
         content = content,
     )
 }
