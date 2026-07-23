@@ -17,13 +17,20 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import com.jukul.readspeeder.ui.components.ReadSpeederMenu
 import com.jukul.readspeeder.ui.components.ReadSpeederTopBar
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.padding
+import com.jukul.readspeeder.ui.screens.SettingsScreen
+import androidx.compose.ui.res.stringResource
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,12 +67,17 @@ private fun ReadSpeederTheme(content: @Composable () -> Unit) {
 private fun ReadSpeederScreen() {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    var currentDestination by remember { mutableStateOf("home") }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
             ReadSpeederMenu(
-                onHomeClick = { scope.launch { drawerState.close() } },
+                currentDestination = currentDestination,
+                onDestinationClick = { destination ->
+                    currentDestination = destination
+                    scope.launch { drawerState.close() }
+                },
             )
         },
     ) {
@@ -73,12 +85,25 @@ private fun ReadSpeederScreen() {
             modifier = Modifier.fillMaxSize(),
             topBar = {
                 ReadSpeederTopBar(
+                    title = stringResource(
+                        if (currentDestination == "settings") {
+                            R.string.settings
+                        } else {
+                            R.string.home
+                        },
+                    ),
+                    showActions = currentDestination == "home",
                     onNavigationClick = { scope.launch { drawerState.open() } },
                     onSearchClick = { },
                     onFilterClick = { },
                 )
             },
-        ) { }
+        ) {innerPadding ->
+            when (currentDestination) {
+                "settings" -> SettingsScreen(
+                    modifier = Modifier.padding(innerPadding),
+                )
+            } }
     }
 }
 

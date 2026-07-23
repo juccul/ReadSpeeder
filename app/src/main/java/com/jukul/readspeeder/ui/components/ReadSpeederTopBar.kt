@@ -18,12 +18,14 @@ import com.jukul.readspeeder.R
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReadSpeederTopBar(
+    title: String,
+    showActions: Boolean,
     onNavigationClick: () -> Unit,
     onSearchClick: () -> Unit,
     onFilterClick: () -> Unit,
 ) {
     TopAppBar(
-        title = { Text(stringResource(R.string.home)) },
+        title = { Text(title) },
         navigationIcon = {
             IconButton(onClick = onNavigationClick) {
                 Icon(
@@ -33,17 +35,19 @@ fun ReadSpeederTopBar(
             }
         },
         actions = {
-            IconButton(onClick = onSearchClick) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = stringResource(R.string.search),
-                )
-            }
-            IconButton(onClick = onFilterClick) {
-                Icon(
-                    imageVector = Icons.Default.FilterList,
-                    contentDescription = stringResource(R.string.filter),
-                )
+            if (showActions) {
+                IconButton(onClick = onSearchClick) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = stringResource(R.string.search),
+                    )
+                }
+                IconButton(onClick = onFilterClick) {
+                    Icon(
+                        imageVector = Icons.Default.FilterList,
+                        contentDescription = stringResource(R.string.filter),
+                    )
+                }
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
