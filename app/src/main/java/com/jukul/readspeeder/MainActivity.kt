@@ -6,7 +6,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
@@ -24,13 +29,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import com.jukul.readspeeder.ui.components.DocumentCard
 import com.jukul.readspeeder.ui.components.ReadSpeederMenu
 import com.jukul.readspeeder.ui.components.ReadSpeederTopBar
-import kotlinx.coroutines.launch
-import androidx.compose.foundation.layout.padding
 import com.jukul.readspeeder.ui.screens.SettingsScreen
-import androidx.compose.ui.res.stringResource
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -100,10 +106,29 @@ private fun ReadSpeederScreen() {
             },
         ) {innerPadding ->
             when (currentDestination) {
+                "home" -> LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentPadding = PaddingValues(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    items(12) { index ->
+                        DocumentCard(
+                            title = "Sample Document ${index + 1}",
+                            author = "Author ${index + 1}",
+                            progress = index * 9,
+                            onClick = { },
+                        )
+                    }
+                }
                 "settings" -> SettingsScreen(
                     modifier = Modifier.padding(innerPadding),
                 )
-            } }
+            }
+        }
     }
 }
 
