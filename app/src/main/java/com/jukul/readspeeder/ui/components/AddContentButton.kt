@@ -43,7 +43,7 @@ import dev.chrisbanes.haze.blur.blurEffect
 import dev.chrisbanes.haze.hazeEffect
 
 @Composable
-fun AddContentButton(
+internal fun AddContentButton(
     expanded: Boolean,
     hazeState: HazeState,
     backgroundColor: Color,
@@ -91,93 +91,93 @@ fun AddContentButton(
 
     Box(
         modifier = modifier
-                .clip(menuShape)
-                .hazeEffect(state = hazeState) {
-                    blurEffect {
-                        this.backgroundColor = backgroundColor
-                        blurRadius = 28.dp
-                    }
+            .clip(menuShape)
+            .hazeEffect(state = hazeState) {
+                blurEffect {
+                    this.backgroundColor = backgroundColor
+                    blurRadius = 28.dp
                 }
-                .background(backgroundColor.copy(alpha = 0.68f))
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-                    shape = menuShape,
-                )
-                .onGloballyPositioned {
-                    onBoundsChanged(it.boundsInRoot())
+            }
+            .background(backgroundColor.copy(alpha = 0.68f))
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                shape = menuShape,
+            )
+            .onGloballyPositioned {
+                onBoundsChanged(it.boundsInRoot())
+            }
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints)
+                val collapsedSize = 56.dp.roundToPx()
+                val width = lerp(collapsedSize, placeable.width, menuExpansion)
+                val height = lerp(collapsedSize, placeable.height, menuExpansion)
+                layout(width, height) {
+                    placeable.placeRelative(
+                        x = width - placeable.width,
+                        y = height - placeable.height,
+                    )
                 }
-                .layout { measurable, constraints ->
-                    val placeable = measurable.measure(constraints)
-                    val collapsedSize = 56.dp.roundToPx()
-                    val width = lerp(collapsedSize, placeable.width, menuExpansion)
-                    val height = lerp(collapsedSize, placeable.height, menuExpansion)
-                    layout(width, height) {
-                        placeable.placeRelative(
-                            x = width - placeable.width,
-                            y = height - placeable.height,
-                        )
-                    }
-                },
+            },
+    ) {
+        Column(
+            modifier = Modifier
+                .width(IntrinsicSize.Max)
+                .graphicsLayer {
+                    alpha = contentAlpha
+                }
+                .padding(8.dp),
         ) {
-            Column(
-                modifier = Modifier
-                    .width(IntrinsicSize.Max)
-                    .graphicsLayer {
-                        alpha = contentAlpha
-                    }
-                    .padding(8.dp),
-            ) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.paste_text)) },
-                    onClick = {
-                        onExpandedChange(false)
-                        onPasteText()
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.ContentPaste,
-                            contentDescription = null,
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = transition.currentState && transition.targetState,
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.add_document)) },
-                    onClick = {
-                        onExpandedChange(false)
-                        onAddDocument()
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.UploadFile,
-                            contentDescription = null,
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = transition.currentState && transition.targetState,
-                )
-            }
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.paste_text)) },
+                onClick = {
+                    onExpandedChange(false)
+                    onPasteText()
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.ContentPaste,
+                        contentDescription = null,
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = transition.currentState && transition.targetState,
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.add_document)) },
+                onClick = {
+                    onExpandedChange(false)
+                    onAddDocument()
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.UploadFile,
+                        contentDescription = null,
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = transition.currentState && transition.targetState,
+            )
+        }
 
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .align(Alignment.BottomEnd)
-                    .graphicsLayer {
-                        alpha = plusAlpha
-                    }
-                    .clickable(enabled = !expanded) {
-                        onExpandedChange(true)
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription =
-                        if (expanded) null else stringResource(R.string.add_content),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .align(Alignment.BottomEnd)
+                .graphicsLayer {
+                    alpha = plusAlpha
+                }
+                .clickable(enabled = !expanded) {
+                    onExpandedChange(true)
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription =
+                    if (expanded) null else stringResource(R.string.add_content),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
+}

@@ -22,7 +22,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun DocumentCard(
+internal fun DocumentCard(
     title: String,
     author: String,
     progress: Int,

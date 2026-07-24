@@ -36,14 +36,14 @@ internal val ExpandedTopBarHeight = 224.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReadSpeederTopBar(
-    modifier: Modifier = Modifier,
+internal fun ReadSpeederTopBar(
     scrollBehavior: TopAppBarScrollBehavior,
     title: String,
     showActions: Boolean,
     onNavigationClick: () -> Unit,
     onSearchClick: () -> Unit,
     onFilterClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
     val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
