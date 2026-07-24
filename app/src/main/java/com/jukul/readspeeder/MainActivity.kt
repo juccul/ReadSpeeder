@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.lerp as lerpDp
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.util.lerp
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.jukul.readspeeder.ui.components.AddContentButton
 import com.jukul.readspeeder.ui.components.CollapsedTopBarHeight
 import com.jukul.readspeeder.ui.components.DocumentCard
 import com.jukul.readspeeder.ui.components.ExpandedTopBarHeight
@@ -262,7 +263,7 @@ private fun ReadSpeederScreen() {
                         start = 16.dp,
                         top = innerPadding.calculateTopPadding() + 16.dp,
                         end = 16.dp,
-                        bottom = innerPadding.calculateBottomPadding() + 16.dp,
+                        bottom = innerPadding.calculateBottomPadding() + 88.dp,
                     ),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -280,6 +281,15 @@ private fun ReadSpeederScreen() {
                     modifier = Modifier.padding(innerPadding),
                 )
             }
+        }
+
+        if (currentDestination == "home") {
+            AddContentButton(
+                hazeState = hazeState,
+                backgroundColor = hazeBackgroundColor,
+                onPasteText = { },
+                onAddDocument = { },
+            )
         }
 
         AnimatedVisibility(
