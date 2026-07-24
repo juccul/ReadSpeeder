@@ -18,11 +18,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +28,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
@@ -51,6 +50,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,11 +59,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -72,6 +72,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp as lerpDp
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.util.lerp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.jukul.readspeeder.ui.components.AddContentButton
@@ -152,9 +153,11 @@ private fun ReadSpeederScreen() {
     val hazeBackgroundColor = MaterialTheme.colorScheme.surface
     val hazeState = rememberHazeState()
     val libraryGridState = rememberLazyGridState()
-    val closeNavigationDescription = stringResource(R.string.close_navigation)
     var currentDestination by remember { mutableStateOf("home") }
     var menuExpanded by remember { mutableStateOf(false) }
+    var addMenuExpanded by remember { mutableStateOf(false) }
+    var navigationMenuBounds by remember { mutableStateOf(Rect.Zero) }
+    var addMenuBounds by remember { mutableStateOf(Rect.Zero) }
     val allowTopBarExpansion = remember { mutableStateOf(false) }
     val topBarScrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         canScroll = {
@@ -193,11 +196,32 @@ private fun ReadSpeederScreen() {
         }
     }
 
-    BackHandler(enabled = menuExpanded) {
-        menuExpanded = false
+    BackHandler(enabled = menuExpanded || addMenuExpanded) {
+        if (addMenuExpanded) {
+            addMenuExpanded = false
+        } else {
+            menuExpanded = false
+        }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(
+                        requireUnconsumed = false,
+                        pass = PointerEventPass.Initial,
+                    )
+                    if (menuExpanded && down.position !in navigationMenuBounds) {
+                        menuExpanded = false
+                    }
+                    if (addMenuExpanded && down.position !in addMenuBounds) {
+                        addMenuExpanded = false
+                    }
+                }
+            },
+    ) {
         val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
         val currentTopBarHeight = statusBarHeight + lerpDp(
             ExpandedTopBarHeight,
@@ -283,12 +307,19 @@ private fun ReadSpeederScreen() {
             }
         }
 
-        if (currentDestination == "home") {
+        if (currentDestination == "home" && !menuExpanded) {
             AddContentButton(
+                expanded = addMenuExpanded,
                 hazeState = hazeState,
                 backgroundColor = hazeBackgroundColor,
+                onExpandedChange = { addMenuExpanded = it },
+                onBoundsChanged = { addMenuBounds = it },
                 onPasteText = { },
                 onAddDocument = { },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(16.dp),
             )
         }
 
@@ -301,15 +332,7 @@ private fun ReadSpeederScreen() {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.08f))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { menuExpanded = false },
-                    )
-                    .semantics {
-                        contentDescription = closeNavigationDescription
-                    },
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.08f)),
             )
         }
 
@@ -320,7 +343,10 @@ private fun ReadSpeederScreen() {
                 .offset(
                     x = 8.dp,
                     y = currentTopBarHeight,
-                ),
+                )
+                .onGloballyPositioned {
+                    navigationMenuBounds = it.boundsInRoot()
+                },
             enter = EnterTransition.None,
             exit = ExitTransition.None,
         ) {

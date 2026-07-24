@@ -1,6 +1,5 @@
 package com.jukul.readspeeder.ui.components
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
@@ -8,13 +7,10 @@ import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,19 +25,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import com.jukul.readspeeder.R
@@ -51,14 +44,15 @@ import dev.chrisbanes.haze.hazeEffect
 
 @Composable
 fun AddContentButton(
+    expanded: Boolean,
     hazeState: HazeState,
     backgroundColor: Color,
+    onExpandedChange: (Boolean) -> Unit,
+    onBoundsChanged: (Rect) -> Unit,
     onPasteText: () -> Unit,
     onAddDocument: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    val closeMenuDescription = stringResource(R.string.close_add_menu)
     val menuShape = RoundedCornerShape(28.dp)
     val transition = updateTransition(
         targetState = expanded,
@@ -95,31 +89,8 @@ fun AddContentButton(
         if (isExpanded) 0f else 1f
     }
 
-    BackHandler(enabled = expanded) {
-        expanded = false
-    }
-
-    Box(modifier = modifier.fillMaxSize()) {
-        if (expanded) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { expanded = false },
-                    )
-                    .semantics {
-                        contentDescription = closeMenuDescription
-                    },
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .navigationBarsPadding()
-                .padding(16.dp)
+    Box(
+        modifier = modifier
                 .clip(menuShape)
                 .hazeEffect(state = hazeState) {
                     blurEffect {
@@ -133,6 +104,9 @@ fun AddContentButton(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
                     shape = menuShape,
                 )
+                .onGloballyPositioned {
+                    onBoundsChanged(it.boundsInRoot())
+                }
                 .layout { measurable, constraints ->
                     val placeable = measurable.measure(constraints)
                     val collapsedSize = 56.dp.roundToPx()
@@ -157,7 +131,7 @@ fun AddContentButton(
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.paste_text)) },
                     onClick = {
-                        expanded = false
+                        onExpandedChange(false)
                         onPasteText()
                     },
                     leadingIcon = {
@@ -172,7 +146,7 @@ fun AddContentButton(
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.add_document)) },
                     onClick = {
-                        expanded = false
+                        onExpandedChange(false)
                         onAddDocument()
                     },
                     leadingIcon = {
@@ -194,7 +168,7 @@ fun AddContentButton(
                         alpha = plusAlpha
                     }
                     .clickable(enabled = !expanded) {
-                        expanded = true
+                        onExpandedChange(true)
                     },
                 contentAlignment = Alignment.Center,
             ) {
@@ -207,4 +181,3 @@ fun AddContentButton(
             }
         }
     }
-}

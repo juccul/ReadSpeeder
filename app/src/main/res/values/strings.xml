@@ -1,13 +1,11 @@
 <resources>
     <string name="app_name">ReadSpeeder</string>
-    <string name="close_navigation">Close navigation</string>
     <string name="open_navigation">Open navigation</string>
     <string name="home">Library</string>
     <string name="search">Search</string>
     <string name="filter">Filter</string>
     <string name="settings">Settings</string>
     <string name="add_content">Add content</string>
-    <string name="close_add_menu">Close add menu</string>
     <string name="paste_text">Paste text</string>
     <string name="add_document">Add document</string>
 </resources>
