@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -268,11 +269,19 @@ internal fun ReadSpeederApp() {
                         targetState.first.ordinal > initialState.first.ordinal -> 1
                         else -> -1
                     }
+                    val exit =
+                        if (
+                            initialState.second != null &&
+                            targetState.second == null &&
+                            targetState.first == AppDestination.Library
+                        ) {
+                            ExitTransition.None
+                        } else {
+                            slideOutHorizontally { -direction * it / 8 } + fadeOut()
+                        }
                     (
                         slideInHorizontally { direction * it / 8 } + fadeIn()
-                    ).togetherWith(
-                        slideOutHorizontally { -direction * it / 8 } + fadeOut(),
-                    )
+                    ).togetherWith(exit)
                 },
                 label = "page",
             ) { (destination, documentId, showPasteText) ->
