@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -20,6 +19,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
@@ -44,6 +44,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
@@ -146,13 +147,17 @@ internal fun ReadSpeederApp() {
         canScroll = {
             currentDestination == AppDestination.Library &&
                 openedDocument == null &&
-                !pastingText &&
-                (libraryGridState.canScrollForward || libraryGridState.canScrollBackward)
+                !pastingText
         },
     )
     val topBarScrollConnection = remember(topBarScrollBehavior) {
         val delegate = topBarScrollBehavior.nestedScrollConnection
         object : NestedScrollConnection {
+            override fun onPreScroll(
+                available: Offset,
+                source: NestedScrollSource,
+            ) = delegate.onPreScroll(available, source)
+
             override fun onPostScroll(
                 consumed: Offset,
                 available: Offset,
@@ -187,7 +192,7 @@ internal fun ReadSpeederApp() {
                 }
         }
     }
-    LaunchedEffect(pageState, libraryAtTop) {
+    LaunchedEffect(pageState) {
         if (
             pageState.first == AppDestination.Library &&
             pageState.second == null &&
@@ -249,7 +254,10 @@ internal fun ReadSpeederApp() {
         val currentTopBarHeight = statusBarHeight + lerp(
             ExpandedTopBarHeight,
             CollapsedTopBarHeight,
-            topBarScrollBehavior.state.collapsedFraction,
+            if (
+                openedDocument != null || pastingText ||
+                currentDestination == AppDestination.Settings
+            ) 1f else topBarScrollBehavior.state.collapsedFraction,
         )
 
         Scaffold(
@@ -257,64 +265,68 @@ internal fun ReadSpeederApp() {
                 .fillMaxSize()
                 .nestedScroll(topBarScrollConnection),
             topBar = {
-                AnimatedContent(
-                    targetState = pageState,
-                    transitionSpec = {
-                        fadeIn(tween(220))
-                            .togetherWith(fadeOut(tween(140)))
-                            .using(
-                                SizeTransform(clip = false) { _, _ -> tween(280) },
-                            )
-                    },
-                    label = "top bar",
-                ) { (destination, documentId, showPasteText) ->
-                    val document = documents.firstOrNull { it.id == documentId }
-                    ReadSpeederTopBar(
-                        scrollBehavior = topBarScrollBehavior,
-                        title = document?.title
-                            ?: stringResource(
-                                if (showPasteText) R.string.paste_text
-                                else destination.titleRes,
-                            ),
-                        subtitle = document?.author,
-                        showActions =
-                            destination == AppDestination.Library &&
-                                documentId == null && !showPasteText,
-                        showBackNavigation =
-                            documentId != null || showPasteText ||
-                                destination == AppDestination.Settings,
-                        onNavigationClick = {
-                            when {
-                                openedDocument != null -> openedDocument = null
-                                pastingText -> pastingText = false
-                                currentDestination == AppDestination.Settings ->
-                                    currentDestination = AppDestination.Library
-                                else -> navigationMenuExpanded = !navigationMenuExpanded
-                            }
+                Box(
+                    modifier = Modifier
+                        .height(currentTopBarHeight)
+                        .clipToBounds(),
+                ) {
+                    AnimatedContent(
+                        targetState = pageState,
+                        transitionSpec = {
+                            fadeIn(tween(220))
+                                .togetherWith(fadeOut(tween(140)))
+                                .using(null)
                         },
-                        onSearchClick = { },
-                        onFilterClick = { },
-                        modifier = Modifier
-                            .hazeEffect(state = hazeState) {
-                                blurEffect {
-                                    backgroundColor = hazeBackgroundColor
-                                    blurRadius = 24.dp
-                                    progressive = HazeProgressive.verticalGradient(
-                                        easing = FastOutLinearInEasing,
-                                        startIntensity = 1f,
-                                        endIntensity = 0f,
-                                        preferPerformance = true,
-                                    )
-                                }
-                            }
-                            .background(
-                                Brush.verticalGradient(
-                                    0f to hazeBackgroundColor,
-                                    0.25f to hazeBackgroundColor.copy(alpha = 0.7f),
-                                    1f to hazeBackgroundColor.copy(alpha = 0f),
+                        label = "top bar",
+                    ) { (destination, documentId, showPasteText) ->
+                        val document = documents.firstOrNull { it.id == documentId }
+                        ReadSpeederTopBar(
+                            scrollBehavior = topBarScrollBehavior,
+                            title = document?.title
+                                ?: stringResource(
+                                    if (showPasteText) R.string.paste_text
+                                    else destination.titleRes,
                                 ),
-                            ),
-                    )
+                            subtitle = document?.author,
+                            showActions =
+                                destination == AppDestination.Library &&
+                                    documentId == null && !showPasteText,
+                            showBackNavigation =
+                                documentId != null || showPasteText ||
+                                    destination == AppDestination.Settings,
+                            onNavigationClick = {
+                                when {
+                                    openedDocument != null -> openedDocument = null
+                                    pastingText -> pastingText = false
+                                    currentDestination == AppDestination.Settings ->
+                                        currentDestination = AppDestination.Library
+                                    else -> navigationMenuExpanded = !navigationMenuExpanded
+                                }
+                            },
+                            onSearchClick = { },
+                            onFilterClick = { },
+                            modifier = Modifier
+                                .hazeEffect(state = hazeState) {
+                                    blurEffect {
+                                        backgroundColor = hazeBackgroundColor
+                                        blurRadius = 24.dp
+                                        progressive = HazeProgressive.verticalGradient(
+                                            easing = FastOutLinearInEasing,
+                                            startIntensity = 1f,
+                                            endIntensity = 0f,
+                                            preferPerformance = true,
+                                        )
+                                    }
+                                }
+                                .background(
+                                    Brush.verticalGradient(
+                                        0f to hazeBackgroundColor,
+                                        0.25f to hazeBackgroundColor.copy(alpha = 0.7f),
+                                        1f to hazeBackgroundColor.copy(alpha = 0f),
+                                    ),
+                                ),
+                        )
+                    }
                 }
             },
             snackbarHost = { SnackbarHost(snackbarHostState) },
