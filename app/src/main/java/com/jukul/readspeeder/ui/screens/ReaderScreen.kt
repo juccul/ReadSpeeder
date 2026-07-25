@@ -239,13 +239,18 @@ internal fun ReaderScreen(
                         colors = progressSliderColors,
                         thumb = {
                             Box(
-                                Modifier
-                                    .size(12.dp)
-                                    .background(
-                                        MaterialTheme.colorScheme.tertiary,
-                                        CircleShape,
-                                    ),
-                            )
+                                modifier = Modifier.height(48.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(12.dp)
+                                        .background(
+                                            MaterialTheme.colorScheme.tertiary,
+                                            CircleShape,
+                                        ),
+                                )
+                            }
                         },
                         track = {
                             SliderDefaults.Track(
