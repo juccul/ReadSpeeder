@@ -60,7 +60,6 @@ import androidx.compose.ui.unit.lerp
 import com.jukul.readspeeder.R
 import com.jukul.readspeeder.data.DocumentImporter
 import com.jukul.readspeeder.data.ReadDocument
-import com.jukul.readspeeder.data.SampleDocuments
 import com.jukul.readspeeder.ui.components.AddContentButton
 import com.jukul.readspeeder.ui.components.CollapsedTopBarHeight
 import com.jukul.readspeeder.ui.components.ExpandedTopBarHeight
@@ -103,9 +102,7 @@ internal fun ReadSpeederApp() {
     val hazeState = rememberHazeState()
     val snackbarHostState = remember { SnackbarHostState() }
     val libraryGridState = rememberLazyGridState()
-    val documents = remember {
-        mutableStateListOf<ReadDocument>().apply { addAll(SampleDocuments) }
-    }
+    val documents = remember { mutableStateListOf<ReadDocument>() }
     var currentDestination by remember { mutableStateOf(AppDestination.Library) }
     var openedDocument by remember { mutableStateOf<ReadDocument?>(null) }
     var pastingText by remember { mutableStateOf(false) }
