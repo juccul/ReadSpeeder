@@ -122,63 +122,66 @@ internal fun ReaderScreen(
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Spacer(Modifier.weight(3f))
-                LinearProgressIndicator(
-                    progress = { progress / 100f },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(
-                    modifier = Modifier.padding(top = 32.dp),
-                    horizontalArrangement = Arrangement.spacedBy(24.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                Spacer(Modifier.weight(2f))
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    IconButton(
-                        onClick = { progress = (progress - 10).coerceAtLeast(0) },
-                        modifier = Modifier.size(72.dp),
+                    LinearProgressIndicator(
+                        progress = { progress / 100f },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            Icons.Rounded.FastRewind,
-                            stringResource(R.string.rewind),
-                            Modifier.size(48.dp),
-                        )
+                        IconButton(
+                            onClick = { progress = (progress - 10).coerceAtLeast(0) },
+                            modifier = Modifier.size(72.dp),
+                        ) {
+                            Icon(
+                                Icons.Rounded.FastRewind,
+                                stringResource(R.string.rewind),
+                                Modifier.size(48.dp),
+                            )
+                        }
+                        IconButton(
+                            onClick = { playing = !playing },
+                            modifier = Modifier.size(72.dp),
+                        ) {
+                            Icon(
+                                if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                stringResource(if (playing) R.string.pause else R.string.play),
+                                Modifier.size(56.dp),
+                            )
+                        }
+                        IconButton(
+                            onClick = { progress = (progress + 10).coerceAtMost(100) },
+                            modifier = Modifier.size(72.dp),
+                        ) {
+                            Icon(
+                                Icons.Rounded.FastForward,
+                                stringResource(R.string.forward),
+                                Modifier.size(48.dp),
+                            )
+                        }
                     }
-                    IconButton(
-                        onClick = { playing = !playing },
-                        modifier = Modifier.size(72.dp),
-                    ) {
-                        Icon(
-                            if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                            stringResource(if (playing) R.string.pause else R.string.play),
-                            Modifier.size(56.dp),
-                        )
-                    }
-                    IconButton(
-                        onClick = { progress = (progress + 10).coerceAtMost(100) },
-                        modifier = Modifier.size(72.dp),
-                    ) {
-                        Icon(
-                            Icons.Rounded.FastForward,
-                            stringResource(R.string.forward),
-                            Modifier.size(48.dp),
-                        )
-                    }
+                    Slider(
+                        value = wpm.toFloat(),
+                        onValueChange = {
+                            wpm = ((it / WpmStep).roundToInt() * WpmStep)
+                                .coerceIn(MinWpm, MaxWpm)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        valueRange = MinWpm.toFloat()..MaxWpm.toFloat(),
+                    )
+                    Text(
+                        text = stringResource(R.string.wpm, wpm),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
                 }
-                Spacer(Modifier.weight(1f))
-                Slider(
-                    value = wpm.toFloat(),
-                    onValueChange = {
-                        wpm = ((it / WpmStep).roundToInt() * WpmStep)
-                            .coerceIn(MinWpm, MaxWpm)
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    valueRange = MinWpm.toFloat()..MaxWpm.toFloat(),
-                )
-                Text(
-                    text = stringResource(R.string.wpm, wpm),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-                Spacer(Modifier.weight(1f))
             }
         }
     }
