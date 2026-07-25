@@ -5,7 +5,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutLinearInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -19,7 +18,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
@@ -44,7 +42,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
@@ -144,11 +141,7 @@ internal fun ReadSpeederApp() {
             }
         }
     val topBarScrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
-        canScroll = {
-            currentDestination == AppDestination.Library &&
-                openedDocument == null &&
-                !pastingText
-        },
+        canScroll = { openedDocument == null && !pastingText },
     )
     val topBarScrollConnection = remember(topBarScrollBehavior) {
         val delegate = topBarScrollBehavior.nestedScrollConnection
@@ -165,6 +158,7 @@ internal fun ReadSpeederApp() {
             ): Offset =
                 if (
                     available.y > 0f &&
+                    currentDestination == AppDestination.Library &&
                     (
                         libraryGridState.firstVisibleItemIndex != 0 ||
                             libraryGridState.firstVisibleItemScrollOffset != 0
@@ -181,6 +175,7 @@ internal fun ReadSpeederApp() {
             ): Velocity =
                 if (
                     available.y > 0f &&
+                    currentDestination == AppDestination.Library &&
                     (
                         libraryGridState.firstVisibleItemIndex != 0 ||
                             libraryGridState.firstVisibleItemScrollOffset != 0
@@ -251,84 +246,17 @@ internal fun ReadSpeederApp() {
             },
     ) {
         val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-        val currentTopBarHeight = statusBarHeight + lerp(
+        val libraryTopBarHeight = statusBarHeight + lerp(
             ExpandedTopBarHeight,
             CollapsedTopBarHeight,
-            if (
-                openedDocument != null || pastingText ||
-                currentDestination == AppDestination.Settings
-            ) 1f else topBarScrollBehavior.state.collapsedFraction,
+            topBarScrollBehavior.state.collapsedFraction,
         )
+        val collapsedTopBarHeight = statusBarHeight + CollapsedTopBarHeight
 
         Scaffold(
             modifier = Modifier
                 .fillMaxSize()
                 .nestedScroll(topBarScrollConnection),
-            topBar = {
-                Box(
-                    modifier = Modifier
-                        .height(currentTopBarHeight)
-                        .clipToBounds(),
-                ) {
-                    AnimatedContent(
-                        targetState = pageState,
-                        transitionSpec = {
-                            fadeIn(tween(220))
-                                .togetherWith(fadeOut(tween(140)))
-                                .using(null)
-                        },
-                        label = "top bar",
-                    ) { (destination, documentId, showPasteText) ->
-                        val document = documents.firstOrNull { it.id == documentId }
-                        ReadSpeederTopBar(
-                            scrollBehavior = topBarScrollBehavior,
-                            title = document?.title
-                                ?: stringResource(
-                                    if (showPasteText) R.string.paste_text
-                                    else destination.titleRes,
-                                ),
-                            subtitle = document?.author,
-                            showActions =
-                                destination == AppDestination.Library &&
-                                    documentId == null && !showPasteText,
-                            showBackNavigation =
-                                documentId != null || showPasteText ||
-                                    destination == AppDestination.Settings,
-                            onNavigationClick = {
-                                when {
-                                    openedDocument != null -> openedDocument = null
-                                    pastingText -> pastingText = false
-                                    currentDestination == AppDestination.Settings ->
-                                        currentDestination = AppDestination.Library
-                                    else -> navigationMenuExpanded = !navigationMenuExpanded
-                                }
-                            },
-                            onSearchClick = { },
-                            onFilterClick = { },
-                            modifier = Modifier
-                                .hazeEffect(state = hazeState) {
-                                    blurEffect {
-                                        backgroundColor = hazeBackgroundColor
-                                        blurRadius = 24.dp
-                                        progressive = HazeProgressive.verticalGradient(
-                                            easing = FastOutLinearInEasing,
-                                            startIntensity = 1f,
-                                            endIntensity = 0f,
-                                            preferPerformance = true,
-                                        )
-                                    }
-                                }
-                                .background(
-                                    Brush.verticalGradient(
-                                        0f to hazeBackgroundColor,
-                                        0.25f to hazeBackgroundColor.copy(alpha = 0.7f),
-                                        1f to hazeBackgroundColor.copy(alpha = 0f),
-                                    ),
-                                ),
-                        )
-                    }
-                }
-            },
             snackbarHost = { SnackbarHost(snackbarHostState) },
         ) { innerPadding ->
             AnimatedContent(
@@ -348,13 +276,20 @@ internal fun ReadSpeederApp() {
                 },
                 label = "page",
             ) { (destination, documentId, showPasteText) ->
+                val pageTopPadding =
+                    if (documentId != null || showPasteText) {
+                        collapsedTopBarHeight
+                    } else {
+                        libraryTopBarHeight
+                    }
+
                 if (documentId != null) {
                     documents.firstOrNull { it.id == documentId }?.let { document ->
                         ReaderScreen(
                             document = document,
                             hazeState = hazeState,
                             backgroundColor = hazeBackgroundColor,
-                            topPadding = innerPadding.calculateTopPadding(),
+                            topPadding = pageTopPadding,
                             onProgressChange = { progress ->
                                 val index = documents.indexOfFirst { it.id == document.id }
                                 if (index >= 0 && documents[index].progress != progress) {
@@ -376,60 +311,125 @@ internal fun ReadSpeederApp() {
                             pastingText = false
                             openedDocument = document
                         },
-                        modifier = Modifier.padding(innerPadding),
+                        modifier = Modifier.padding(
+                            top = pageTopPadding,
+                            bottom = innerPadding.calculateBottomPadding(),
+                        ),
                     )
                 } else when (destination) {
-                    AppDestination.Library -> LibraryScreen(
-                        state = libraryGridState,
-                        documents = documents,
-                        contentPadding = PaddingValues(
-                            start = 16.dp,
-                            top = innerPadding.calculateTopPadding() + 16.dp,
-                            end = 16.dp,
-                            bottom = innerPadding.calculateBottomPadding() + 88.dp,
-                        ),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .hazeSource(state = hazeState),
-                        onDocumentClick = {
-                            openedDocument = it
-                        },
-                    )
+                    AppDestination.Library -> Box(Modifier.fillMaxSize()) {
+                        LibraryScreen(
+                            state = libraryGridState,
+                            documents = documents,
+                            contentPadding = PaddingValues(
+                                start = 16.dp,
+                                top = pageTopPadding + 16.dp,
+                                end = 16.dp,
+                                bottom = innerPadding.calculateBottomPadding() + 88.dp,
+                            ),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .hazeSource(state = hazeState),
+                            onDocumentClick = { openedDocument = it },
+                        )
+                        AddContentButton(
+                            expanded = addContentMenuExpanded,
+                            hazeState = hazeState,
+                            backgroundColor = hazeBackgroundColor,
+                            onExpandedChange = { addContentMenuExpanded = it },
+                            onBoundsChanged = { addContentMenuBounds = it },
+                            onPasteText = { pastingText = true },
+                            onAddDocument = {
+                                documentPicker.launch(SupportedDocumentTypes)
+                            },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .navigationBarsPadding()
+                                .padding(16.dp),
+                        )
+                    }
 
                     AppDestination.Settings -> SettingsScreen(
-                        modifier = Modifier.padding(innerPadding),
+                        modifier = Modifier.padding(
+                            top = pageTopPadding,
+                            bottom = innerPadding.calculateBottomPadding(),
+                        ),
                     )
                 }
             }
         }
 
-        if (
-            currentDestination == AppDestination.Library &&
-            openedDocument == null &&
-            !pastingText &&
-            !navigationMenuExpanded
-        ) {
-            AddContentButton(
-                expanded = addContentMenuExpanded,
-                hazeState = hazeState,
-                backgroundColor = hazeBackgroundColor,
-                onExpandedChange = { addContentMenuExpanded = it },
-                onBoundsChanged = { addContentMenuBounds = it },
-                onPasteText = {
-                    pastingText = true
+        AnimatedContent(
+            targetState = pageState,
+            transitionSpec = {
+                val direction = when {
+                    targetState.second != null || targetState.third -> 1
+                    initialState.second != null || initialState.third -> -1
+                    targetState.first.ordinal > initialState.first.ordinal -> 1
+                    else -> -1
+                }
+                (
+                    slideInHorizontally { direction * it / 8 } + fadeIn()
+                ).togetherWith(
+                    slideOutHorizontally { -direction * it / 8 } + fadeOut(),
+                ).using(null)
+            },
+            label = "top bar",
+        ) { (destination, documentId, showPasteText) ->
+            val document = documents.firstOrNull { it.id == documentId }
+            ReadSpeederTopBar(
+                scrollBehavior = topBarScrollBehavior,
+                title = document?.title
+                    ?: stringResource(
+                        if (showPasteText) R.string.paste_text
+                        else destination.titleRes,
+                    ),
+                subtitle = document?.author,
+                showActions =
+                    destination == AppDestination.Library &&
+                        documentId == null && !showPasteText,
+                showBackNavigation =
+                    documentId != null || showPasteText ||
+                        destination == AppDestination.Settings,
+                forceCollapsed = documentId != null || showPasteText,
+                onNavigationClick = {
+                    when {
+                        openedDocument != null -> openedDocument = null
+                        pastingText -> pastingText = false
+                        currentDestination == AppDestination.Settings ->
+                            currentDestination = AppDestination.Library
+                        else -> navigationMenuExpanded = !navigationMenuExpanded
+                    }
                 },
-                onAddDocument = { documentPicker.launch(SupportedDocumentTypes) },
+                onSearchClick = { },
+                onFilterClick = { },
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .navigationBarsPadding()
-                    .padding(16.dp),
+                    .hazeEffect(state = hazeState) {
+                        blurEffect {
+                            backgroundColor = hazeBackgroundColor
+                            blurRadius = 24.dp
+                            progressive = HazeProgressive.verticalGradient(
+                                easing = FastOutLinearInEasing,
+                                startIntensity = 1f,
+                                endIntensity = 0f,
+                                preferPerformance = true,
+                            )
+                        }
+                    }
+                    .background(
+                        Brush.verticalGradient(
+                            0f to hazeBackgroundColor,
+                            0.25f to hazeBackgroundColor.copy(alpha = 0.7f),
+                            1f to hazeBackgroundColor.copy(alpha = 0f),
+                        ),
+                    ),
             )
         }
 
         NavigationMenuOverlay(
             expanded = navigationMenuExpanded,
             currentDestination = currentDestination,
-            topOffset = currentTopBarHeight,
+            topOffset = libraryTopBarHeight,
             hazeState = hazeState,
             backgroundColor = hazeBackgroundColor,
             onBoundsChanged = { navigationMenuBounds = it },

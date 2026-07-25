@@ -43,6 +43,7 @@ internal fun ReadSpeederTopBar(
     subtitle: String?,
     showActions: Boolean,
     showBackNavigation: Boolean,
+    forceCollapsed: Boolean,
     onNavigationClick: () -> Unit,
     onSearchClick: () -> Unit,
     onFilterClick: () -> Unit,
@@ -50,7 +51,7 @@ internal fun ReadSpeederTopBar(
 ) {
     val density = LocalDensity.current
     val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val collapsedFraction = if (showBackNavigation) 1f else scrollBehavior.state.collapsedFraction
+    val collapsedFraction = if (forceCollapsed) 1f else scrollBehavior.state.collapsedFraction
 
     SideEffect {
         scrollBehavior.state.heightOffsetLimit = with(density) {
@@ -82,6 +83,7 @@ internal fun ReadSpeederTopBar(
                 MaterialTheme.typography.titleLarge,
                 collapsedFraction,
             ),
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -110,15 +112,24 @@ internal fun ReadSpeederTopBar(
                         if (showBackNavigation) R.string.back_to_library
                         else R.string.open_navigation,
                     ),
+                    tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
             Spacer(Modifier.weight(1f))
             if (showActions) {
                 IconButton(onClick = onSearchClick) {
-                    Icon(Icons.Default.Search, stringResource(R.string.search))
+                    Icon(
+                        Icons.Default.Search,
+                        stringResource(R.string.search),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
                 }
                 IconButton(onClick = onFilterClick) {
-                    Icon(Icons.Default.FilterList, stringResource(R.string.filter))
+                    Icon(
+                        Icons.Default.FilterList,
+                        stringResource(R.string.filter),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
                 }
             }
         }
