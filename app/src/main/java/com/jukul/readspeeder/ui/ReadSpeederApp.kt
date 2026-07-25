@@ -4,7 +4,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -13,7 +15,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -33,6 +34,8 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -110,6 +113,13 @@ internal fun ReadSpeederApp() {
     var addContentMenuExpanded by remember { mutableStateOf(false) }
     var navigationMenuBounds by remember { mutableStateOf(Rect.Zero) }
     var addContentMenuBounds by remember { mutableStateOf(Rect.Zero) }
+    val pageState = Triple(currentDestination, openedDocument?.id, pastingText)
+    val libraryAtTop by remember {
+        derivedStateOf {
+            libraryGridState.firstVisibleItemIndex == 0 &&
+                libraryGridState.firstVisibleItemScrollOffset == 0
+        }
+    }
     val documentPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
@@ -132,7 +142,6 @@ internal fun ReadSpeederApp() {
                 }
             }
         }
-    val allowTopBarExpansion = remember { mutableStateOf(false) }
     val topBarScrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         canScroll = {
             currentDestination == AppDestination.Library &&
@@ -144,17 +153,18 @@ internal fun ReadSpeederApp() {
     val topBarScrollConnection = remember(topBarScrollBehavior) {
         val delegate = topBarScrollBehavior.nestedScrollConnection
         object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (available.y < 0f) allowTopBarExpansion.value = false
-                return delegate.onPreScroll(available, source)
-            }
-
             override fun onPostScroll(
                 consumed: Offset,
                 available: Offset,
                 source: NestedScrollSource,
             ): Offset =
-                if (available.y > 0f && !allowTopBarExpansion.value) {
+                if (
+                    available.y > 0f &&
+                    (
+                        libraryGridState.firstVisibleItemIndex != 0 ||
+                            libraryGridState.firstVisibleItemScrollOffset != 0
+                    )
+                ) {
                     Offset.Zero
                 } else {
                     delegate.onPostScroll(consumed, available, source)
@@ -164,18 +174,36 @@ internal fun ReadSpeederApp() {
                 consumed: Velocity,
                 available: Velocity,
             ): Velocity =
-                if (available.y > 0f && !allowTopBarExpansion.value) {
+                if (
+                    available.y > 0f &&
+                    (
+                        libraryGridState.firstVisibleItemIndex != 0 ||
+                            libraryGridState.firstVisibleItemScrollOffset != 0
+                    )
+                ) {
                     Velocity.Zero
                 } else {
                     delegate.onPostFling(consumed, available)
                 }
         }
     }
+    LaunchedEffect(pageState, libraryAtTop) {
+        if (
+            pageState.first == AppDestination.Library &&
+            pageState.second == null &&
+            !pageState.third &&
+            !libraryAtTop
+        ) {
+            topBarScrollBehavior.state.heightOffset =
+                topBarScrollBehavior.state.heightOffsetLimit
+        }
+    }
 
     BackHandler(
         enabled =
             navigationMenuExpanded || addContentMenuExpanded ||
-                openedDocument != null || pastingText,
+                openedDocument != null || pastingText ||
+                currentDestination != AppDestination.Library,
     ) {
         if (addContentMenuExpanded) {
             addContentMenuExpanded = false
@@ -184,6 +212,7 @@ internal fun ReadSpeederApp() {
         } else {
             openedDocument = null
             pastingText = false
+            currentDestination = AppDestination.Library
         }
     }
 
@@ -196,11 +225,22 @@ internal fun ReadSpeederApp() {
                         requireUnconsumed = false,
                         pass = PointerEventPass.Initial,
                     )
-                    if (navigationMenuExpanded && down.position !in navigationMenuBounds) {
+                    val dismissNavigation =
+                        navigationMenuExpanded && down.position !in navigationMenuBounds
+                    val dismissAddContent =
+                        addContentMenuExpanded && down.position !in addContentMenuBounds
+                    if (dismissNavigation) {
                         navigationMenuExpanded = false
                     }
-                    if (addContentMenuExpanded && down.position !in addContentMenuBounds) {
+                    if (dismissAddContent) {
                         addContentMenuExpanded = false
+                    }
+                    if (dismissNavigation || dismissAddContent) {
+                        down.consume()
+                        do {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            event.changes.forEach { it.consume() }
+                        } while (event.changes.any { it.pressed })
                     }
                 }
             },
@@ -215,68 +255,72 @@ internal fun ReadSpeederApp() {
         Scaffold(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(currentDestination, libraryGridState) {
-                    awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed = false)
-                        allowTopBarExpansion.value =
-                            currentDestination == AppDestination.Library &&
-                                openedDocument == null &&
-                                !pastingText &&
-                                !libraryGridState.canScrollBackward
-                        waitForUpOrCancellation()
-                    }
-                }
                 .nestedScroll(topBarScrollConnection),
             topBar = {
-                ReadSpeederTopBar(
-                    scrollBehavior = topBarScrollBehavior,
-                    title = openedDocument?.title
-                        ?: stringResource(
-                            if (pastingText) R.string.paste_text
-                            else currentDestination.titleRes,
-                        ),
-                    subtitle = openedDocument?.author,
-                    showActions =
-                        currentDestination == AppDestination.Library &&
-                            openedDocument == null && !pastingText,
-                    showBackNavigation = openedDocument != null || pastingText,
-                    onNavigationClick = {
-                        if (openedDocument != null) {
-                            openedDocument = null
-                        } else if (pastingText) {
-                            pastingText = false
-                        } else {
-                            navigationMenuExpanded = !navigationMenuExpanded
-                        }
+                AnimatedContent(
+                    targetState = pageState,
+                    transitionSpec = {
+                        fadeIn(tween(220))
+                            .togetherWith(fadeOut(tween(140)))
+                            .using(
+                                SizeTransform(clip = false) { _, _ -> tween(280) },
+                            )
                     },
-                    onSearchClick = { },
-                    onFilterClick = { },
-                    modifier = Modifier
-                        .hazeEffect(state = hazeState) {
-                            blurEffect {
-                                backgroundColor = hazeBackgroundColor
-                                blurRadius = 24.dp
-                                progressive = HazeProgressive.verticalGradient(
-                                    easing = FastOutLinearInEasing,
-                                    startIntensity = 1f,
-                                    endIntensity = 0f,
-                                    preferPerformance = true,
-                                )
-                            }
-                        }
-                        .background(
-                            Brush.verticalGradient(
-                                0f to hazeBackgroundColor,
-                                0.25f to hazeBackgroundColor.copy(alpha = 0.7f),
-                                1f to hazeBackgroundColor.copy(alpha = 0f),
+                    label = "top bar",
+                ) { (destination, documentId, showPasteText) ->
+                    val document = documents.firstOrNull { it.id == documentId }
+                    ReadSpeederTopBar(
+                        scrollBehavior = topBarScrollBehavior,
+                        title = document?.title
+                            ?: stringResource(
+                                if (showPasteText) R.string.paste_text
+                                else destination.titleRes,
                             ),
-                        ),
-                )
+                        subtitle = document?.author,
+                        showActions =
+                            destination == AppDestination.Library &&
+                                documentId == null && !showPasteText,
+                        showBackNavigation =
+                            documentId != null || showPasteText ||
+                                destination == AppDestination.Settings,
+                        onNavigationClick = {
+                            when {
+                                openedDocument != null -> openedDocument = null
+                                pastingText -> pastingText = false
+                                currentDestination == AppDestination.Settings ->
+                                    currentDestination = AppDestination.Library
+                                else -> navigationMenuExpanded = !navigationMenuExpanded
+                            }
+                        },
+                        onSearchClick = { },
+                        onFilterClick = { },
+                        modifier = Modifier
+                            .hazeEffect(state = hazeState) {
+                                blurEffect {
+                                    backgroundColor = hazeBackgroundColor
+                                    blurRadius = 24.dp
+                                    progressive = HazeProgressive.verticalGradient(
+                                        easing = FastOutLinearInEasing,
+                                        startIntensity = 1f,
+                                        endIntensity = 0f,
+                                        preferPerformance = true,
+                                    )
+                                }
+                            }
+                            .background(
+                                Brush.verticalGradient(
+                                    0f to hazeBackgroundColor,
+                                    0.25f to hazeBackgroundColor.copy(alpha = 0.7f),
+                                    1f to hazeBackgroundColor.copy(alpha = 0f),
+                                ),
+                            ),
+                    )
+                }
             },
             snackbarHost = { SnackbarHost(snackbarHostState) },
         ) { innerPadding ->
             AnimatedContent(
-                targetState = Triple(currentDestination, openedDocument?.id, pastingText),
+                targetState = pageState,
                 transitionSpec = {
                     val direction = when {
                         targetState.second != null || targetState.third -> 1
@@ -337,7 +381,6 @@ internal fun ReadSpeederApp() {
                             .hazeSource(state = hazeState),
                         onDocumentClick = {
                             openedDocument = it
-                            topBarScrollBehavior.state.heightOffset = 0f
                         },
                     )
 
@@ -362,7 +405,6 @@ internal fun ReadSpeederApp() {
                 onBoundsChanged = { addContentMenuBounds = it },
                 onPasteText = {
                     pastingText = true
-                    topBarScrollBehavior.state.heightOffset = 0f
                 },
                 onAddDocument = { documentPicker.launch(SupportedDocumentTypes) },
                 modifier = Modifier
@@ -383,7 +425,6 @@ internal fun ReadSpeederApp() {
                 currentDestination = destination
                 openedDocument = null
                 pastingText = false
-                topBarScrollBehavior.state.heightOffset = 0f
                 navigationMenuExpanded = false
             },
         )
