@@ -45,5 +45,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.haze.blur)
     implementation(libs.material)
+    implementation(libs.pdfbox.android) {
+        exclude(group = "org.bouncycastle", module = "bcpkix-jdk15to18")
+    }
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

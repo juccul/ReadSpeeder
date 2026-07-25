@@ -8,13 +8,17 @@
     <string name="settings">Settings</string>
     <string name="add_content">Add content</string>
     <string name="paste_text">Paste text</string>
+    <string name="paste_text_hint">Paste or type text here</string>
+    <string name="start_reading">Start reading</string>
     <string name="add_document">Add document</string>
-    <string name="rewind">Rewind 10 percent</string>
+    <string name="document_imported">%1$s imported</string>
+    <string name="document_import_failed">Document import failed</string>
+    <string name="rewind">Rewind 10 words</string>
     <string name="play">Play</string>
     <string name="pause">Pause</string>
-    <string name="forward">Forward 10 percent</string>
+    <string name="forward">Forward 10 words</string>
+    <string name="reading_progress">Reading progress</string>
     <string name="speed">Speed</string>
     <string name="standard">Standard</string>
-    <string name="standard_reading_mode">Standard reading mode</string>
     <string name="wpm">%1$d WPM</string>
 </resources>

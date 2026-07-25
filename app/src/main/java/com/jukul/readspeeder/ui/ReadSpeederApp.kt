@@ -1,6 +1,15 @@
 package com.jukul.readspeeder.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -20,11 +29,15 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,18 +50,24 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import com.jukul.readspeeder.R
+import com.jukul.readspeeder.data.DocumentImporter
+import com.jukul.readspeeder.data.ReadDocument
+import com.jukul.readspeeder.data.SampleDocuments
 import com.jukul.readspeeder.ui.components.AddContentButton
 import com.jukul.readspeeder.ui.components.CollapsedTopBarHeight
 import com.jukul.readspeeder.ui.components.ExpandedTopBarHeight
 import com.jukul.readspeeder.ui.components.NavigationMenuOverlay
 import com.jukul.readspeeder.ui.components.ReadSpeederTopBar
 import com.jukul.readspeeder.ui.screens.LibraryScreen
+import com.jukul.readspeeder.ui.screens.PasteTextScreen
 import com.jukul.readspeeder.ui.screens.ReaderScreen
 import com.jukul.readspeeder.ui.screens.SettingsScreen
 import com.jukul.readspeeder.ui.theme.ReadSpeederTheme
@@ -57,6 +76,17 @@ import dev.chrisbanes.haze.blur.blurEffect
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.UUID
+
+private val SupportedDocumentTypes = arrayOf(
+    "text/plain",
+    "application/pdf",
+    "application/epub+zip",
+)
 
 internal enum class AppDestination(val titleRes: Int, val icon: ImageVector) {
     Library(R.string.library, Icons.Default.Home),
@@ -66,20 +96,51 @@ internal enum class AppDestination(val titleRes: Int, val icon: ImageVector) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ReadSpeederApp() {
+    val context = LocalContext.current
+    val resources = LocalResources.current
+    val scope = rememberCoroutineScope()
     val hazeBackgroundColor = MaterialTheme.colorScheme.surface
     val hazeState = rememberHazeState()
+    val snackbarHostState = remember { SnackbarHostState() }
     val libraryGridState = rememberLazyGridState()
+    val documents = remember {
+        mutableStateListOf<ReadDocument>().apply { addAll(SampleDocuments) }
+    }
     var currentDestination by remember { mutableStateOf(AppDestination.Library) }
-    var openedDocumentIndex by remember { mutableStateOf<Int?>(null) }
+    var openedDocument by remember { mutableStateOf<ReadDocument?>(null) }
+    var pastingText by remember { mutableStateOf(false) }
     var navigationMenuExpanded by remember { mutableStateOf(false) }
     var addContentMenuExpanded by remember { mutableStateOf(false) }
     var navigationMenuBounds by remember { mutableStateOf(Rect.Zero) }
     var addContentMenuBounds by remember { mutableStateOf(Rect.Zero) }
+    val documentPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) {
+                scope.launch {
+                    try {
+                        val document = withContext(Dispatchers.IO) {
+                            DocumentImporter.import(context.contentResolver, uri)
+                        }
+                        documents.removeAll { it.id == document.id }
+                        documents.add(0, document)
+                        snackbarHostState.showSnackbar(
+                            resources.getString(R.string.document_imported, document.title),
+                        )
+                    } catch (error: Exception) {
+                        if (error is CancellationException) throw error
+                        snackbarHostState.showSnackbar(
+                            error.message ?: resources.getString(R.string.document_import_failed),
+                        )
+                    }
+                }
+            }
+        }
     val allowTopBarExpansion = remember { mutableStateOf(false) }
     val topBarScrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         canScroll = {
             currentDestination == AppDestination.Library &&
-                openedDocumentIndex == null &&
+                openedDocument == null &&
+                !pastingText &&
                 (libraryGridState.canScrollForward || libraryGridState.canScrollBackward)
         },
     )
@@ -115,14 +176,17 @@ internal fun ReadSpeederApp() {
     }
 
     BackHandler(
-        enabled = navigationMenuExpanded || addContentMenuExpanded || openedDocumentIndex != null,
+        enabled =
+            navigationMenuExpanded || addContentMenuExpanded ||
+                openedDocument != null || pastingText,
     ) {
         if (addContentMenuExpanded) {
             addContentMenuExpanded = false
         } else if (navigationMenuExpanded) {
             navigationMenuExpanded = false
         } else {
-            openedDocumentIndex = null
+            openedDocument = null
+            pastingText = false
         }
     }
 
@@ -159,7 +223,8 @@ internal fun ReadSpeederApp() {
                         awaitFirstDown(requireUnconsumed = false)
                         allowTopBarExpansion.value =
                             currentDestination == AppDestination.Library &&
-                                openedDocumentIndex == null &&
+                                openedDocument == null &&
+                                !pastingText &&
                                 !libraryGridState.canScrollBackward
                         waitForUpOrCancellation()
                     }
@@ -168,14 +233,21 @@ internal fun ReadSpeederApp() {
             topBar = {
                 ReadSpeederTopBar(
                     scrollBehavior = topBarScrollBehavior,
-                    title = openedDocumentIndex?.let { "Sample Document ${it + 1}" }
-                        ?: stringResource(currentDestination.titleRes),
+                    title = openedDocument?.title
+                        ?: stringResource(
+                            if (pastingText) R.string.paste_text
+                            else currentDestination.titleRes,
+                        ),
+                    subtitle = openedDocument?.author,
                     showActions =
-                        currentDestination == AppDestination.Library && openedDocumentIndex == null,
-                    showBackNavigation = openedDocumentIndex != null,
+                        currentDestination == AppDestination.Library &&
+                            openedDocument == null && !pastingText,
+                    showBackNavigation = openedDocument != null || pastingText,
                     onNavigationClick = {
-                        if (openedDocumentIndex != null) {
-                            openedDocumentIndex = null
+                        if (openedDocument != null) {
+                            openedDocument = null
+                        } else if (pastingText) {
+                            pastingText = false
                         } else {
                             navigationMenuExpanded = !navigationMenuExpanded
                         }
@@ -188,6 +260,7 @@ internal fun ReadSpeederApp() {
                                 backgroundColor = hazeBackgroundColor
                                 blurRadius = 24.dp
                                 progressive = HazeProgressive.verticalGradient(
+                                    easing = FastOutLinearInEasing,
                                     startIntensity = 1f,
                                     endIntensity = 0f,
                                     preferPerformance = true,
@@ -196,50 +269,92 @@ internal fun ReadSpeederApp() {
                         }
                         .background(
                             Brush.verticalGradient(
-                                colors = listOf(
-                                    hazeBackgroundColor,
-                                    hazeBackgroundColor.copy(alpha = 0f),
-                                ),
+                                0f to hazeBackgroundColor,
+                                0.25f to hazeBackgroundColor.copy(alpha = 0.7f),
+                                1f to hazeBackgroundColor.copy(alpha = 0f),
                             ),
                         ),
                 )
             },
+            snackbarHost = { SnackbarHost(snackbarHostState) },
         ) { innerPadding ->
-            val documentIndex = openedDocumentIndex
-            if (documentIndex != null) {
-                ReaderScreen(
-                    initialProgress = documentIndex * 9,
-                    hazeState = hazeState,
-                    backgroundColor = hazeBackgroundColor,
-                    modifier = Modifier.padding(top = innerPadding.calculateTopPadding()),
-                )
-            } else when (currentDestination) {
-                AppDestination.Library -> LibraryScreen(
-                    state = libraryGridState,
-                    contentPadding = PaddingValues(
-                        start = 16.dp,
-                        top = innerPadding.calculateTopPadding() + 16.dp,
-                        end = 16.dp,
-                        bottom = innerPadding.calculateBottomPadding() + 88.dp,
-                    ),
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .hazeSource(state = hazeState),
-                    onDocumentClick = { index ->
-                        openedDocumentIndex = index
-                        topBarScrollBehavior.state.heightOffset = 0f
-                    },
-                )
+            AnimatedContent(
+                targetState = Triple(currentDestination, openedDocument?.id, pastingText),
+                transitionSpec = {
+                    val direction = when {
+                        targetState.second != null || targetState.third -> 1
+                        initialState.second != null || initialState.third -> -1
+                        targetState.first.ordinal > initialState.first.ordinal -> 1
+                        else -> -1
+                    }
+                    (
+                        slideInHorizontally { direction * it / 8 } + fadeIn()
+                    ).togetherWith(
+                        slideOutHorizontally { -direction * it / 8 } + fadeOut(),
+                    )
+                },
+                label = "page",
+            ) { (destination, documentId, showPasteText) ->
+                if (documentId != null) {
+                    documents.firstOrNull { it.id == documentId }?.let { document ->
+                        ReaderScreen(
+                            document = document,
+                            hazeState = hazeState,
+                            backgroundColor = hazeBackgroundColor,
+                            topPadding = innerPadding.calculateTopPadding(),
+                            onProgressChange = { progress ->
+                                val index = documents.indexOfFirst { it.id == document.id }
+                                if (index >= 0 && documents[index].progress != progress) {
+                                    documents[index] = documents[index].copy(progress = progress)
+                                }
+                            },
+                        )
+                    }
+                } else if (showPasteText) {
+                    PasteTextScreen(
+                        onRead = { text ->
+                            val document = ReadDocument(
+                                id = UUID.randomUUID().toString(),
+                                title = resources.getString(R.string.paste_text),
+                                author = null,
+                                text = text,
+                            )
+                            documents.add(0, document)
+                            pastingText = false
+                            openedDocument = document
+                        },
+                        modifier = Modifier.padding(innerPadding),
+                    )
+                } else when (destination) {
+                    AppDestination.Library -> LibraryScreen(
+                        state = libraryGridState,
+                        documents = documents,
+                        contentPadding = PaddingValues(
+                            start = 16.dp,
+                            top = innerPadding.calculateTopPadding() + 16.dp,
+                            end = 16.dp,
+                            bottom = innerPadding.calculateBottomPadding() + 88.dp,
+                        ),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .hazeSource(state = hazeState),
+                        onDocumentClick = {
+                            openedDocument = it
+                            topBarScrollBehavior.state.heightOffset = 0f
+                        },
+                    )
 
-                AppDestination.Settings -> SettingsScreen(
-                    modifier = Modifier.padding(innerPadding),
-                )
+                    AppDestination.Settings -> SettingsScreen(
+                        modifier = Modifier.padding(innerPadding),
+                    )
+                }
             }
         }
 
         if (
             currentDestination == AppDestination.Library &&
-            openedDocumentIndex == null &&
+            openedDocument == null &&
+            !pastingText &&
             !navigationMenuExpanded
         ) {
             AddContentButton(
@@ -248,8 +363,11 @@ internal fun ReadSpeederApp() {
                 backgroundColor = hazeBackgroundColor,
                 onExpandedChange = { addContentMenuExpanded = it },
                 onBoundsChanged = { addContentMenuBounds = it },
-                onPasteText = { },
-                onAddDocument = { },
+                onPasteText = {
+                    pastingText = true
+                    topBarScrollBehavior.state.heightOffset = 0f
+                },
+                onAddDocument = { documentPicker.launch(SupportedDocumentTypes) },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .navigationBarsPadding()
@@ -266,7 +384,8 @@ internal fun ReadSpeederApp() {
             onBoundsChanged = { navigationMenuBounds = it },
             onDestinationSelected = { destination ->
                 currentDestination = destination
-                openedDocumentIndex = null
+                openedDocument = null
+                pastingText = false
                 topBarScrollBehavior.state.heightOffset = 0f
                 navigationMenuExpanded = false
             },

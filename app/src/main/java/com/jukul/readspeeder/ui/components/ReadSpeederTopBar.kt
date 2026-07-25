@@ -40,6 +40,7 @@ internal val ExpandedTopBarHeight = 224.dp
 internal fun ReadSpeederTopBar(
     scrollBehavior: TopAppBarScrollBehavior,
     title: String,
+    subtitle: String?,
     showActions: Boolean,
     showBackNavigation: Boolean,
     onNavigationClick: () -> Unit,
@@ -69,7 +70,12 @@ internal fun ReadSpeederTopBar(
             text = title,
             modifier = Modifier.offset(
                 x = lerpDp(16.dp, 64.dp, collapsedFraction),
-                y = statusBarHeight + lerpDp(116.dp, 18.dp, collapsedFraction),
+                y = statusBarHeight +
+                    if (subtitle == null) {
+                        lerpDp(116.dp, 18.dp, collapsedFraction)
+                    } else {
+                        4.dp
+                    },
             ),
             style = lerpTextStyle(
                 MaterialTheme.typography.headlineLarge,
@@ -79,6 +85,16 @@ internal fun ReadSpeederTopBar(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        if (subtitle != null) {
+            Text(
+                text = subtitle,
+                modifier = Modifier.offset(x = 64.dp, y = statusBarHeight + 34.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
