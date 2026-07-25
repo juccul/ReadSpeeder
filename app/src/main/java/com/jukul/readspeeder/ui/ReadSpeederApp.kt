@@ -49,6 +49,7 @@ import com.jukul.readspeeder.ui.components.ExpandedTopBarHeight
 import com.jukul.readspeeder.ui.components.NavigationMenuOverlay
 import com.jukul.readspeeder.ui.components.ReadSpeederTopBar
 import com.jukul.readspeeder.ui.screens.LibraryScreen
+import com.jukul.readspeeder.ui.screens.ReaderScreen
 import com.jukul.readspeeder.ui.screens.SettingsScreen
 import com.jukul.readspeeder.ui.theme.ReadSpeederTheme
 import dev.chrisbanes.haze.blur.HazeProgressive
@@ -57,10 +58,7 @@ import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 
-internal enum class AppDestination(
-    val titleRes: Int,
-    val icon: ImageVector,
-) {
+internal enum class AppDestination(val titleRes: Int, val icon: ImageVector) {
     Library(R.string.library, Icons.Default.Home),
     Settings(R.string.settings, Icons.Default.Settings),
 }
@@ -72,6 +70,7 @@ internal fun ReadSpeederApp() {
     val hazeState = rememberHazeState()
     val libraryGridState = rememberLazyGridState()
     var currentDestination by remember { mutableStateOf(AppDestination.Library) }
+    var openedDocumentIndex by remember { mutableStateOf<Int?>(null) }
     var navigationMenuExpanded by remember { mutableStateOf(false) }
     var addContentMenuExpanded by remember { mutableStateOf(false) }
     var navigationMenuBounds by remember { mutableStateOf(Rect.Zero) }
@@ -80,6 +79,7 @@ internal fun ReadSpeederApp() {
     val topBarScrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         canScroll = {
             currentDestination == AppDestination.Library &&
+                openedDocumentIndex == null &&
                 (libraryGridState.canScrollForward || libraryGridState.canScrollBackward)
         },
     )
@@ -114,11 +114,15 @@ internal fun ReadSpeederApp() {
         }
     }
 
-    BackHandler(enabled = navigationMenuExpanded || addContentMenuExpanded) {
+    BackHandler(
+        enabled = navigationMenuExpanded || addContentMenuExpanded || openedDocumentIndex != null,
+    ) {
         if (addContentMenuExpanded) {
             addContentMenuExpanded = false
-        } else {
+        } else if (navigationMenuExpanded) {
             navigationMenuExpanded = false
+        } else {
+            openedDocumentIndex = null
         }
     }
 
@@ -155,6 +159,7 @@ internal fun ReadSpeederApp() {
                         awaitFirstDown(requireUnconsumed = false)
                         allowTopBarExpansion.value =
                             currentDestination == AppDestination.Library &&
+                                openedDocumentIndex == null &&
                                 !libraryGridState.canScrollBackward
                         waitForUpOrCancellation()
                     }
@@ -163,10 +168,17 @@ internal fun ReadSpeederApp() {
             topBar = {
                 ReadSpeederTopBar(
                     scrollBehavior = topBarScrollBehavior,
-                    title = stringResource(currentDestination.titleRes),
-                    showActions = currentDestination == AppDestination.Library,
+                    title = openedDocumentIndex?.let { "Sample Document ${it + 1}" }
+                        ?: stringResource(currentDestination.titleRes),
+                    showActions =
+                        currentDestination == AppDestination.Library && openedDocumentIndex == null,
+                    showBackNavigation = openedDocumentIndex != null,
                     onNavigationClick = {
-                        navigationMenuExpanded = !navigationMenuExpanded
+                        if (openedDocumentIndex != null) {
+                            openedDocumentIndex = null
+                        } else {
+                            navigationMenuExpanded = !navigationMenuExpanded
+                        }
                     },
                     onSearchClick = { },
                     onFilterClick = { },
@@ -193,7 +205,15 @@ internal fun ReadSpeederApp() {
                 )
             },
         ) { innerPadding ->
-            when (currentDestination) {
+            val documentIndex = openedDocumentIndex
+            if (documentIndex != null) {
+                ReaderScreen(
+                    initialProgress = documentIndex * 9,
+                    hazeState = hazeState,
+                    backgroundColor = hazeBackgroundColor,
+                    modifier = Modifier.padding(top = innerPadding.calculateTopPadding()),
+                )
+            } else when (currentDestination) {
                 AppDestination.Library -> LibraryScreen(
                     state = libraryGridState,
                     contentPadding = PaddingValues(
@@ -205,6 +225,10 @@ internal fun ReadSpeederApp() {
                     modifier = Modifier
                         .fillMaxSize()
                         .hazeSource(state = hazeState),
+                    onDocumentClick = { index ->
+                        openedDocumentIndex = index
+                        topBarScrollBehavior.state.heightOffset = 0f
+                    },
                 )
 
                 AppDestination.Settings -> SettingsScreen(
@@ -213,7 +237,11 @@ internal fun ReadSpeederApp() {
             }
         }
 
-        if (currentDestination == AppDestination.Library && !navigationMenuExpanded) {
+        if (
+            currentDestination == AppDestination.Library &&
+            openedDocumentIndex == null &&
+            !navigationMenuExpanded
+        ) {
             AddContentButton(
                 expanded = addContentMenuExpanded,
                 hazeState = hazeState,
@@ -238,6 +266,7 @@ internal fun ReadSpeederApp() {
             onBoundsChanged = { navigationMenuBounds = it },
             onDestinationSelected = { destination ->
                 currentDestination = destination
+                openedDocumentIndex = null
                 topBarScrollBehavior.state.heightOffset = 0f
                 navigationMenuExpanded = false
             },
@@ -247,8 +276,4 @@ internal fun ReadSpeederApp() {
 
 @Preview(showBackground = true)
 @Composable
-private fun ReadSpeederAppPreview() {
-    ReadSpeederTheme {
-        ReadSpeederApp()
-    }
-}
+private fun ReadSpeederAppPreview() = ReadSpeederTheme { ReadSpeederApp() }

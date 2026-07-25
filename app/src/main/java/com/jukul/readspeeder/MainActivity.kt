@@ -12,9 +12,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            ReadSpeederTheme {
-                ReadSpeederApp()
-            }
+            ReadSpeederTheme { ReadSpeederApp() }
         }
     }
 }

@@ -48,8 +48,6 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.blurEffect
 import dev.chrisbanes.haze.hazeEffect
 
-private val MenuItemCornerRadius = 16.dp
-
 @Composable
 internal fun NavigationMenuOverlay(
     expanded: Boolean,
@@ -69,7 +67,7 @@ internal fun NavigationMenuOverlay(
             exit = fadeOut(tween(160)),
         ) {
             Box(
-                modifier = Modifier
+                Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.08f)),
             )
@@ -79,53 +77,38 @@ internal fun NavigationMenuOverlay(
             visible = expanded,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .offset(
-                    x = 8.dp,
-                    y = topOffset,
-                )
-                .onGloballyPositioned {
-                    onBoundsChanged(it.boundsInRoot())
-                },
+                .offset(x = 8.dp, y = topOffset)
+                .onGloballyPositioned { onBoundsChanged(it.boundsInRoot()) },
             enter = EnterTransition.None,
             exit = ExitTransition.None,
         ) {
             val menuExpansion by transition.animateFloat(
                 transitionSpec = { tween(280, easing = FastOutSlowInEasing) },
                 label = "menu expansion",
-            ) { state ->
-                if (state == EnterExitState.Visible) 1f else 0f
-            }
+            ) { if (it == EnterExitState.Visible) 1f else 0f }
             val cornerRadius by transition.animateDp(
                 transitionSpec = { tween(280, easing = FastOutSlowInEasing) },
                 label = "menu corners",
-            ) { state ->
-                if (state == EnterExitState.Visible) 28.dp else 24.dp
-            }
+            ) { if (it == EnterExitState.Visible) 28.dp else 24.dp }
             val surfaceAlpha by transition.animateFloat(
                 transitionSpec = { tween(120) },
                 label = "menu surface",
-            ) { state ->
-                if (state == EnterExitState.Visible) 1f else 0f
-            }
+            ) { if (it == EnterExitState.Visible) 1f else 0f }
             val contentAlpha by transition.animateFloat(
                 transitionSpec = {
                     if (targetState == EnterExitState.Visible) {
-                        tween(durationMillis = 120, delayMillis = 140)
+                        tween(120, delayMillis = 140)
                     } else {
-                        tween(durationMillis = 80)
+                        tween(80)
                     }
                 },
                 label = "menu content",
-            ) { state ->
-                if (state == EnterExitState.Visible) 1f else 0f
-            }
+            ) { if (it == EnterExitState.Visible) 1f else 0f }
             val menuShape = RoundedCornerShape(cornerRadius)
 
             Box(
                 modifier = Modifier
-                    .graphicsLayer {
-                        alpha = surfaceAlpha
-                    }
+                    .graphicsLayer { alpha = surfaceAlpha }
                     .clip(menuShape)
                     .hazeEffect(state = hazeState) {
                         blurEffect {
@@ -150,54 +133,34 @@ internal fun NavigationMenuOverlay(
                         }
                     },
             ) {
-                NavigationMenuItems(
-                    currentDestination = currentDestination,
-                    onDestinationSelected = onDestinationSelected,
-                    modifier = Modifier.graphicsLayer {
-                        alpha = contentAlpha
-                    },
-                )
+                Column(
+                    modifier = Modifier
+                        .graphicsLayer { alpha = contentAlpha }
+                        .width(IntrinsicSize.Max)
+                        .padding(12.dp),
+                ) {
+                    AppDestination.entries.forEach { destination ->
+                        NavigationDrawerItem(
+                            label = { Text(stringResource(destination.titleRes)) },
+                            selected = currentDestination == destination,
+                            onClick = { onDestinationSelected(destination) },
+                            icon = { Icon(destination.icon, contentDescription = null) },
+                            badge = {
+                                Icon(Icons.Default.ChevronRight, contentDescription = null)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = NavigationDrawerItemDefaults.colors(
+                                unselectedContainerColor = Color.Transparent,
+                                selectedContainerColor =
+                                    MaterialTheme.colorScheme.secondaryContainer.copy(
+                                        alpha = 0.72f,
+                                    ),
+                            ),
+                        )
+                    }
+                }
             }
-        }
-    }
-}
-
-@Composable
-private fun NavigationMenuItems(
-    currentDestination: AppDestination,
-    onDestinationSelected: (AppDestination) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .width(IntrinsicSize.Max)
-            .padding(12.dp),
-    ) {
-        AppDestination.entries.forEach { destination ->
-            NavigationDrawerItem(
-                label = { Text(stringResource(destination.titleRes)) },
-                selected = currentDestination == destination,
-                onClick = { onDestinationSelected(destination) },
-                icon = {
-                    Icon(
-                        imageVector = destination.icon,
-                        contentDescription = null,
-                    )
-                },
-                badge = {
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = null,
-                    )
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(MenuItemCornerRadius),
-                colors = NavigationDrawerItemDefaults.colors(
-                    unselectedContainerColor = Color.Transparent,
-                    selectedContainerColor =
-                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
-                ),
-            )
         }
     }
 }

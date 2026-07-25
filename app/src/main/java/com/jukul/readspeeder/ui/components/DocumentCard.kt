@@ -35,9 +35,7 @@ internal fun DocumentCard(
     ) {
         Card(
             onClick = onClick,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(2f / 3f),
+            modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
             ),
@@ -46,16 +44,12 @@ internal fun DocumentCard(
                 Icon(
                     imageVector = Icons.Default.Description,
                     contentDescription = null,
-                    modifier = Modifier
-                        .size(72.dp)
-                        .align(Alignment.Center),
+                    modifier = Modifier.size(72.dp).align(Alignment.Center),
                     tint = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
                 LinearProgressIndicator(
                     progress = { progress.coerceIn(0, 100) / 100f },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomCenter),
+                    modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter),
                 )
             }
         }

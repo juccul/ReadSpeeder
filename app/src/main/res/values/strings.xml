@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">ReadSpeeder</string>
     <string name="open_navigation">Open navigation</string>
+    <string name="back_to_library">Back to library</string>
     <string name="library">Library</string>
     <string name="search">Search</string>
     <string name="filter">Filter</string>
@@ -8,4 +9,12 @@
     <string name="add_content">Add content</string>
     <string name="paste_text">Paste text</string>
     <string name="add_document">Add document</string>
+    <string name="rewind">Rewind 10 percent</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="forward">Forward 10 percent</string>
+    <string name="speed">Speed</string>
+    <string name="standard">Standard</string>
+    <string name="standard_reading_mode">Standard reading mode</string>
+    <string name="wpm">%1$d WPM</string>
 </resources>

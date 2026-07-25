@@ -54,40 +54,23 @@ internal fun AddContentButton(
     modifier: Modifier = Modifier,
 ) {
     val menuShape = RoundedCornerShape(28.dp)
-    val transition = updateTransition(
-        targetState = expanded,
-        label = "add menu",
-    )
+    val transition = updateTransition(targetState = expanded, label = "add menu")
     val menuExpansion by transition.animateFloat(
         transitionSpec = { tween(280, easing = FastOutSlowInEasing) },
         label = "add menu expansion",
-    ) { isExpanded ->
-        if (isExpanded) 1f else 0f
-    }
+    ) { if (it) 1f else 0f }
     val contentAlpha by transition.animateFloat(
         transitionSpec = {
-            if (targetState) {
-                tween(durationMillis = 120, delayMillis = 140)
-            } else {
-                tween(durationMillis = 80)
-            }
+            if (targetState) tween(120, delayMillis = 140) else tween(80)
         },
         label = "add menu content",
-    ) { isExpanded ->
-        if (isExpanded) 1f else 0f
-    }
+    ) { if (it) 1f else 0f }
     val plusAlpha by transition.animateFloat(
         transitionSpec = {
-            if (targetState) {
-                tween(durationMillis = 80)
-            } else {
-                tween(durationMillis = 120, delayMillis = 140)
-            }
+            if (targetState) tween(80) else tween(120, delayMillis = 140)
         },
         label = "add icon",
-    ) { isExpanded ->
-        if (isExpanded) 0f else 1f
-    }
+    ) { if (it) 0f else 1f }
 
     Box(
         modifier = modifier
@@ -104,9 +87,7 @@ internal fun AddContentButton(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
                 shape = menuShape,
             )
-            .onGloballyPositioned {
-                onBoundsChanged(it.boundsInRoot())
-            }
+            .onGloballyPositioned { onBoundsChanged(it.boundsInRoot()) }
             .layout { measurable, constraints ->
                 val placeable = measurable.measure(constraints)
                 val collapsedSize = 56.dp.roundToPx()
@@ -123,9 +104,7 @@ internal fun AddContentButton(
         Column(
             modifier = Modifier
                 .width(IntrinsicSize.Max)
-                .graphicsLayer {
-                    alpha = contentAlpha
-                }
+                .graphicsLayer { alpha = contentAlpha }
                 .padding(8.dp),
         ) {
             DropdownMenuItem(
@@ -135,10 +114,7 @@ internal fun AddContentButton(
                     onPasteText()
                 },
                 leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.ContentPaste,
-                        contentDescription = null,
-                    )
+                    Icon(Icons.Default.ContentPaste, contentDescription = null)
                 },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = transition.currentState && transition.targetState,
@@ -150,10 +126,7 @@ internal fun AddContentButton(
                     onAddDocument()
                 },
                 leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.UploadFile,
-                        contentDescription = null,
-                    )
+                    Icon(Icons.Default.UploadFile, contentDescription = null)
                 },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = transition.currentState && transition.targetState,
@@ -164,9 +137,7 @@ internal fun AddContentButton(
             modifier = Modifier
                 .size(56.dp)
                 .align(Alignment.BottomEnd)
-                .graphicsLayer {
-                    alpha = plusAlpha
-                }
+                .graphicsLayer { alpha = plusAlpha }
                 .clickable(enabled = !expanded) {
                     onExpandedChange(true)
                 },

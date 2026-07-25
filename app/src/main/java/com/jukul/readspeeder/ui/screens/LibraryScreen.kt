@@ -14,9 +14,9 @@ import com.jukul.readspeeder.ui.components.DocumentCard
 internal fun LibraryScreen(
     state: LazyGridState,
     contentPadding: PaddingValues,
+    onDocumentClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
-) {
-    LazyVerticalGrid(
+) = LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         state = state,
         modifier = modifier,
@@ -29,8 +29,7 @@ internal fun LibraryScreen(
                 title = "Sample Document ${index + 1}",
                 author = "Author ${index + 1}",
                 progress = index * 9,
-                onClick = { },
+                onClick = { onDocumentClick(index) },
             )
         }
     }
-}

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
@@ -40,6 +41,7 @@ internal fun ReadSpeederTopBar(
     scrollBehavior: TopAppBarScrollBehavior,
     title: String,
     showActions: Boolean,
+    showBackNavigation: Boolean,
     onNavigationClick: () -> Unit,
     onSearchClick: () -> Unit,
     onFilterClick: () -> Unit,
@@ -47,7 +49,7 @@ internal fun ReadSpeederTopBar(
 ) {
     val density = LocalDensity.current
     val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val collapsedFraction = scrollBehavior.state.collapsedFraction
+    val collapsedFraction = if (showBackNavigation) 1f else scrollBehavior.state.collapsedFraction
 
     SideEffect {
         scrollBehavior.state.heightOffsetLimit = with(density) {
@@ -86,23 +88,21 @@ internal fun ReadSpeederTopBar(
         ) {
             IconButton(onClick = onNavigationClick) {
                 Icon(
-                    imageVector = Icons.Default.Menu,
-                    contentDescription = stringResource(R.string.open_navigation),
+                    if (showBackNavigation) Icons.AutoMirrored.Filled.ArrowBack
+                    else Icons.Default.Menu,
+                    stringResource(
+                        if (showBackNavigation) R.string.back_to_library
+                        else R.string.open_navigation,
+                    ),
                 )
             }
             Spacer(Modifier.weight(1f))
             if (showActions) {
                 IconButton(onClick = onSearchClick) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = stringResource(R.string.search),
-                    )
+                    Icon(Icons.Default.Search, stringResource(R.string.search))
                 }
                 IconButton(onClick = onFilterClick) {
-                    Icon(
-                        imageVector = Icons.Default.FilterList,
-                        contentDescription = stringResource(R.string.filter),
-                    )
+                    Icon(Icons.Default.FilterList, stringResource(R.string.filter))
                 }
             }
         }
