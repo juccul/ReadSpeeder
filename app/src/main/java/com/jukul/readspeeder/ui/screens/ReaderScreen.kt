@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -118,6 +119,7 @@ internal fun ReaderScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             NavigationBar(
                 modifier = Modifier
@@ -269,7 +271,7 @@ internal fun ReaderScreen(
                     ) {
                         IconButton(
                             onClick = { wordIndex = (wordIndex - WordJump).coerceAtLeast(0) },
-                            modifier = Modifier.size(72.dp),
+                            modifier = Modifier.size(56.dp),
                             enabled = words.isNotEmpty(),
                         ) {
                             Icon(
@@ -280,7 +282,7 @@ internal fun ReaderScreen(
                         }
                         IconButton(
                             onClick = { playing = !playing },
-                            modifier = Modifier.size(72.dp),
+                            modifier = Modifier.size(56.dp),
                             enabled = words.isNotEmpty(),
                         ) {
                             Icon(
@@ -293,7 +295,7 @@ internal fun ReaderScreen(
                             onClick = {
                                 wordIndex = (wordIndex + WordJump).coerceAtMost(words.lastIndex)
                             },
-                            modifier = Modifier.size(72.dp),
+                            modifier = Modifier.size(56.dp),
                             enabled = words.isNotEmpty(),
                         ) {
                             Icon(
@@ -315,7 +317,7 @@ internal fun ReaderScreen(
                     Text(
                         text = stringResource(R.string.wpm, wpm),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.bodyMedium,
                     )
                 }
             }
