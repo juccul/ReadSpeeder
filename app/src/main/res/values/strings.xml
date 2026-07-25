@@ -13,10 +13,10 @@
     <string name="add_document">Add document</string>
     <string name="document_imported">%1$s imported</string>
     <string name="document_import_failed">Document import failed</string>
-    <string name="rewind">Rewind 10 words</string>
+    <string name="rewind">Previous sentence</string>
     <string name="play">Play</string>
     <string name="pause">Pause</string>
-    <string name="forward">Forward 10 words</string>
+    <string name="forward">Next sentence</string>
     <string name="reading_progress">Reading progress</string>
     <string name="speed">Speed</string>
     <string name="standard">Standard</string>

@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -50,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -71,7 +74,6 @@ private const val DefaultWpm = 300
 private const val MinWpm = 50
 private const val MaxWpm = 1_000
 private const val WpmStep = 5
-private const val WordJump = 10
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,9 +85,9 @@ internal fun ReaderScreen(
     onProgressChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val words = remember(document.id, document.text) {
-        document.text.split(Regex("\\s+")).filter(String::isNotBlank)
-    }
+    val readerText = remember(document.id, document.text) { parseReaderText(document.text) }
+    val words = readerText.words
+    val sentences = readerText.sentences
     var wordIndex by remember(document.id, words.size) {
         val lastIndex = words.lastIndex.coerceAtLeast(0)
         mutableIntStateOf((lastIndex * document.progress / 100f).roundToInt())
@@ -94,6 +96,9 @@ internal fun ReaderScreen(
     var standardMode by remember(document.id) { mutableStateOf(false) }
     var wpm by remember(document.id) { mutableIntStateOf(DefaultWpm) }
     var chapterMenuExpanded by remember(document.id) { mutableStateOf(false) }
+    val sentenceIndex = sentences.binarySearchBy(wordIndex) { it.firstWord }.let {
+        if (it >= 0) it else (-it - 2).coerceAtLeast(0)
+    }
     val progressDescription = stringResource(R.string.reading_progress)
     val progressSliderColors = SliderDefaults.colors(
         thumbColor = MaterialTheme.colorScheme.tertiary,
@@ -199,13 +204,69 @@ internal fun ReaderScreen(
                     modifier = Modifier.fillMaxWidth().weight(2f),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = words.getOrElse(wordIndex) { "" },
-                        style = MaterialTheme.typography.displayMedium,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    val word = words.getOrElse(wordIndex) { "" }
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(20.dp),
+                    ) {
+                        Text(
+                            text = sentences.getOrNull(sentenceIndex)?.text.orEmpty(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyLarge,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        val focus = remember(word) { word.focusCharacterRange() }
+                        val focusStart = focus.first.coerceAtLeast(0)
+                        val focusEnd = if (focus.isEmpty()) focusStart else focus.last + 1
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clearAndSetSemantics { contentDescription = word },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = word.take(focusStart),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .wrapContentWidth(Alignment.End, unbounded = true),
+                                style = MaterialTheme.typography.displayMedium,
+                                textAlign = TextAlign.End,
+                                maxLines = 1,
+                                overflow = TextOverflow.Clip,
+                            )
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(
+                                    Modifier
+                                        .width(2.dp)
+                                        .height(10.dp)
+                                        .background(MaterialTheme.colorScheme.onSurface),
+                                )
+                                Text(
+                                    text = word.substring(focusStart, focusEnd),
+                                    style = MaterialTheme.typography.displayMedium,
+                                    maxLines = 1,
+                                )
+                                Box(
+                                    Modifier
+                                        .width(2.dp)
+                                        .height(10.dp)
+                                        .background(MaterialTheme.colorScheme.onSurface),
+                                )
+                            }
+                            Text(
+                                text = word.drop(focusEnd),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .wrapContentWidth(Alignment.Start, unbounded = true),
+                                style = MaterialTheme.typography.displayMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Clip,
+                            )
+                        }
+                    }
                     if (document.chapters.isNotEmpty()) {
                         ChapterSelector(
                             chapters = document.chapters,
@@ -270,9 +331,11 @@ internal fun ReaderScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         IconButton(
-                            onClick = { wordIndex = (wordIndex - WordJump).coerceAtLeast(0) },
+                            onClick = {
+                                wordIndex = sentences[sentenceIndex - 1].firstWord
+                            },
                             modifier = Modifier.size(56.dp),
-                            enabled = words.isNotEmpty(),
+                            enabled = sentenceIndex > 0,
                         ) {
                             Icon(
                                 Icons.Rounded.FastRewind,
@@ -293,10 +356,10 @@ internal fun ReaderScreen(
                         }
                         IconButton(
                             onClick = {
-                                wordIndex = (wordIndex + WordJump).coerceAtMost(words.lastIndex)
+                                wordIndex = sentences[sentenceIndex + 1].firstWord
                             },
                             modifier = Modifier.size(56.dp),
-                            enabled = words.isNotEmpty(),
+                            enabled = sentenceIndex < sentences.lastIndex,
                         ) {
                             Icon(
                                 Icons.Rounded.FastForward,
@@ -323,6 +386,103 @@ internal fun ReaderScreen(
             }
         }
     }
+}
+
+private data class ReaderText(
+    val words: List<String>,
+    val sentences: List<ReaderSentence>,
+)
+
+private data class ReaderSentence(
+    val text: String,
+    val firstWord: Int,
+)
+
+private fun parseReaderText(text: String): ReaderText {
+    val words = buildList {
+        var start = 0
+        while (start < text.length) {
+            while (start < text.length && text[start].isWhitespace()) start++
+            if (start == text.length) break
+            var end = start + 1
+            while (end < text.length && !text[end].isWhitespace()) end++
+            add(start until end)
+            start = end
+        }
+    }
+    if (words.isEmpty()) return ReaderText(emptyList(), emptyList())
+
+    val sentences = buildList {
+        var firstWord = 0
+        words.forEachIndexed { index, word ->
+            val nextStart = words.getOrNull(index + 1)?.first ?: text.length
+            if (
+                index == words.lastIndex ||
+                text.endsSentence(word) ||
+                text.hasParagraphBreak(word.last + 1, nextStart)
+            ) {
+                add(
+                    ReaderSentence(
+                        text = (firstWord..index).joinToString(" ") {
+                            text.substring(words[it])
+                        },
+                        firstWord = firstWord,
+                    ),
+                )
+                firstWord = index + 1
+            }
+        }
+    }
+    return ReaderText(words.map { text.substring(it) }, sentences)
+}
+
+private fun String.endsSentence(range: IntRange): Boolean {
+    var index = range.last
+    while (index >= range.first && this[index] in "\"'”’»)]}") index--
+    return index >= range.first && this[index] in ".!?…。！？"
+}
+
+private fun String.hasParagraphBreak(start: Int, end: Int): Boolean {
+    var newlines = 0
+    for (index in start until end) {
+        if (this[index] == '\n' && ++newlines == 2) return true
+    }
+    return false
+}
+
+private fun String.focusCharacterRange(): IntRange {
+    val characters = buildList {
+        var start = 0
+        while (start < length) {
+            var end = start + Character.charCount(codePointAt(start))
+            while (end < length && codePointAt(end).isCombiningMark()) {
+                end += Character.charCount(codePointAt(end))
+            }
+            add(start until end)
+            start = end
+        }
+    }
+    val readable = characters.filter { Character.isLetterOrDigit(codePointAt(it.first)) }
+    val candidates = readable.ifEmpty { characters }
+    if (candidates.isEmpty()) return IntRange.EMPTY
+
+    val position = when (candidates.size) {
+        1 -> 0
+        in 2..5 -> 1
+        in 6..9 -> 2
+        in 10..13 -> 3
+        else -> 4
+    }
+    return candidates[position.coerceAtMost(candidates.lastIndex)]
+}
+
+private fun Int.isCombiningMark(): Boolean = when (Character.getType(this)) {
+    Character.NON_SPACING_MARK.toInt(),
+    Character.COMBINING_SPACING_MARK.toInt(),
+    Character.ENCLOSING_MARK.toInt(),
+    -> true
+
+    else -> false
 }
 
 @Composable
