@@ -26,11 +26,16 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,6 +46,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -60,23 +66,28 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import com.jukul.readspeeder.R
+import com.jukul.readspeeder.data.AppSettings
 import com.jukul.readspeeder.data.DocumentImporter
+import com.jukul.readspeeder.data.DocumentStore
+import com.jukul.readspeeder.data.LibraryStorage
 import com.jukul.readspeeder.data.ReadDocument
 import com.jukul.readspeeder.ui.components.AddContentButton
 import com.jukul.readspeeder.ui.components.CollapsedTopBarHeight
+import com.jukul.readspeeder.ui.components.DocumentMenuOverlay
 import com.jukul.readspeeder.ui.components.ExpandedTopBarHeight
 import com.jukul.readspeeder.ui.components.NavigationMenuOverlay
 import com.jukul.readspeeder.ui.components.ReadSpeederTopBar
+import com.jukul.readspeeder.ui.components.SortMenuOverlay
 import com.jukul.readspeeder.ui.screens.LibraryScreen
 import com.jukul.readspeeder.ui.screens.PasteTextScreen
 import com.jukul.readspeeder.ui.screens.ReaderScreen
 import com.jukul.readspeeder.ui.screens.SettingsScreen
 import com.jukul.readspeeder.ui.theme.ReadSpeederTheme
+import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeProgressive
 import dev.chrisbanes.haze.blur.blurEffect
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -94,29 +105,81 @@ internal enum class AppDestination(val titleRes: Int, val icon: ImageVector) {
     Settings(R.string.settings, Icons.Default.Settings),
 }
 
+private enum class DocumentEditField { Title, Author }
+
+private data class AppPageState(
+    val destination: AppDestination,
+    val documentId: String?,
+    val showPasteText: Boolean,
+    val hazeState: HazeState,
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ReadSpeederApp() {
+internal fun ReadSpeederApp(
+    settings: AppSettings,
+    onSettingsChange: (AppSettings) -> Unit,
+) {
     val context = LocalContext.current
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val hazeBackgroundColor = MaterialTheme.colorScheme.surface
-    val hazeState = rememberHazeState()
     val snackbarHostState = remember { SnackbarHostState() }
     val libraryGridState = rememberLazyGridState()
+    val documentStore = remember { DocumentStore(context.applicationContext) }
     val documents = remember { mutableStateListOf<ReadDocument>() }
-    var currentDestination by remember { mutableStateOf(AppDestination.Library) }
-    var openedDocument by remember { mutableStateOf<ReadDocument?>(null) }
-    var pastingText by remember { mutableStateOf(false) }
+    var libraryLoading by remember { mutableStateOf(true) }
+    var libraryStorage by remember { mutableStateOf(LibraryStorage(0, 0)) }
+    var currentDestination by rememberSaveable { mutableStateOf(AppDestination.Library) }
+    var openedDocumentId by rememberSaveable {
+        mutableStateOf(documentStore.activeDocumentId())
+    }
+    var pastingText by rememberSaveable { mutableStateOf(false) }
+    var librarySearchQuery by rememberSaveable { mutableStateOf<String?>(null) }
+    var readerHeld by remember { mutableStateOf(false) }
     var navigationMenuExpanded by remember { mutableStateOf(false) }
+    var sortMenuExpanded by remember { mutableStateOf(false) }
+    var documentMenuExpanded by remember { mutableStateOf(false) }
+    var documentMenuId by remember { mutableStateOf<String?>(null) }
+    var documentMenuAnchor by remember { mutableStateOf(Offset.Zero) }
+    var editingDocumentField by remember { mutableStateOf<DocumentEditField?>(null) }
+    var editDocumentValue by remember { mutableStateOf("") }
+    var confirmDocumentDelete by remember { mutableStateOf(false) }
     var addContentMenuExpanded by remember { mutableStateOf(false) }
     var navigationMenuBounds by remember { mutableStateOf(Rect.Zero) }
+    var sortMenuBounds by remember { mutableStateOf(Rect.Zero) }
+    var documentMenuBounds by remember { mutableStateOf(Rect.Zero) }
     var addContentMenuBounds by remember { mutableStateOf(Rect.Zero) }
-    val pageState = Triple(currentDestination, openedDocument?.id, pastingText)
+    val pageState = remember(currentDestination, openedDocumentId, pastingText) {
+        AppPageState(
+            destination = currentDestination,
+            documentId = openedDocumentId,
+            showPasteText = pastingText,
+            hazeState = HazeState(),
+        )
+    }
     val libraryAtTop by remember {
         derivedStateOf {
             libraryGridState.firstVisibleItemIndex == 0 &&
                 libraryGridState.firstVisibleItemScrollOffset == 0
+        }
+    }
+    val librarySearchActive =
+        currentDestination == AppDestination.Library &&
+            openedDocumentId == null && !pastingText && librarySearchQuery != null
+    LaunchedEffect(Unit) {
+        val restored = withContext(Dispatchers.IO) { documentStore.loadAll() }
+        documents.addAll(restored.documents)
+        if (openedDocumentId != null && restored.documents.none { it.id == openedDocumentId }) {
+            documentStore.setActiveDocument(null)
+            openedDocumentId = null
+        }
+        libraryStorage = withContext(Dispatchers.IO) { documentStore.storage() }
+        libraryLoading = false
+        if (restored.failedCount > 0) {
+            snackbarHostState.showSnackbar(
+                resources.getString(R.string.library_restore_failed),
+            )
         }
     }
     val documentPicker =
@@ -125,10 +188,15 @@ internal fun ReadSpeederApp() {
                 scope.launch {
                     try {
                         val document = withContext(Dispatchers.IO) {
-                            DocumentImporter.import(context.contentResolver, uri)
+                            DocumentImporter.import(context.contentResolver, uri).also(
+                                documentStore::save,
+                            )
                         }
                         documents.removeAll { it.id == document.id }
                         documents.add(0, document)
+                        libraryStorage = withContext(Dispatchers.IO) {
+                            documentStore.storage()
+                        }
                         snackbarHostState.showSnackbar(
                             resources.getString(R.string.document_imported, document.title),
                         )
@@ -142,7 +210,7 @@ internal fun ReadSpeederApp() {
             }
         }
     val topBarScrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
-        canScroll = { openedDocument == null && !pastingText },
+        canScroll = { openedDocumentId == null && !pastingText },
     )
     val topBarScrollConnection = remember(topBarScrollBehavior) {
         val delegate = topBarScrollBehavior.nestedScrollConnection
@@ -190,9 +258,9 @@ internal fun ReadSpeederApp() {
     }
     LaunchedEffect(pageState) {
         if (
-            pageState.first == AppDestination.Library &&
-            pageState.second == null &&
-            !pageState.third &&
+            pageState.destination == AppDestination.Library &&
+            pageState.documentId == null &&
+            !pageState.showPasteText &&
             !libraryAtTop
         ) {
             topBarScrollBehavior.state.heightOffset =
@@ -202,16 +270,25 @@ internal fun ReadSpeederApp() {
 
     BackHandler(
         enabled =
-            navigationMenuExpanded || addContentMenuExpanded ||
-                openedDocument != null || pastingText ||
+            navigationMenuExpanded || sortMenuExpanded || documentMenuExpanded ||
+                addContentMenuExpanded ||
+                librarySearchActive ||
+                openedDocumentId != null || pastingText ||
                 currentDestination != AppDestination.Library,
     ) {
         if (addContentMenuExpanded) {
             addContentMenuExpanded = false
+        } else if (documentMenuExpanded) {
+            documentMenuExpanded = false
+        } else if (sortMenuExpanded) {
+            sortMenuExpanded = false
         } else if (navigationMenuExpanded) {
             navigationMenuExpanded = false
+        } else if (librarySearchActive) {
+            librarySearchQuery = null
         } else {
-            openedDocument = null
+            documentStore.setActiveDocument(null)
+            openedDocumentId = null
             pastingText = false
             currentDestination = AppDestination.Library
         }
@@ -220,7 +297,7 @@ internal fun ReadSpeederApp() {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
+            .pointerInput(openedDocumentId) {
                 awaitEachGesture {
                     val down = awaitFirstDown(
                         requireUnconsumed = false,
@@ -228,20 +305,43 @@ internal fun ReadSpeederApp() {
                     )
                     val dismissNavigation =
                         navigationMenuExpanded && down.position !in navigationMenuBounds
+                    val dismissSort = sortMenuExpanded && down.position !in sortMenuBounds
+                    val dismissDocumentMenu =
+                        documentMenuExpanded && down.position !in documentMenuBounds
                     val dismissAddContent =
                         addContentMenuExpanded && down.position !in addContentMenuBounds
+                    val holdingReader = openedDocumentId != null
+                    if (holdingReader) readerHeld = true
                     if (dismissNavigation) {
                         navigationMenuExpanded = false
                     }
                     if (dismissAddContent) {
                         addContentMenuExpanded = false
                     }
-                    if (dismissNavigation || dismissAddContent) {
+                    if (dismissSort) {
+                        sortMenuExpanded = false
+                    }
+                    if (dismissDocumentMenu) {
+                        documentMenuExpanded = false
+                    }
+                    if (
+                        dismissNavigation || dismissSort || dismissDocumentMenu ||
+                        dismissAddContent
+                    ) {
                         down.consume()
+                    }
+                    try {
                         do {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
-                            event.changes.forEach { it.consume() }
+                            if (
+                                dismissNavigation || dismissSort || dismissDocumentMenu ||
+                                dismissAddContent
+                            ) {
+                                event.changes.forEach { it.consume() }
+                            }
                         } while (event.changes.any { it.pressed })
+                    } finally {
+                        if (holdingReader) readerHeld = false
                     }
                 }
             },
@@ -264,16 +364,16 @@ internal fun ReadSpeederApp() {
                 targetState = pageState,
                 transitionSpec = {
                     val direction = when {
-                        targetState.second != null || targetState.third -> 1
-                        initialState.second != null || initialState.third -> -1
-                        targetState.first.ordinal > initialState.first.ordinal -> 1
+                        targetState.documentId != null || targetState.showPasteText -> 1
+                        initialState.documentId != null || initialState.showPasteText -> -1
+                        targetState.destination.ordinal > initialState.destination.ordinal -> 1
                         else -> -1
                     }
                     val exit =
                         if (
-                            initialState.second != null &&
-                            targetState.second == null &&
-                            targetState.first == AppDestination.Library
+                            initialState.documentId != null &&
+                            targetState.documentId == null &&
+                            targetState.destination == AppDestination.Library
                         ) {
                             ExitTransition.None
                         } else {
@@ -284,7 +384,10 @@ internal fun ReadSpeederApp() {
                     ).togetherWith(exit)
                 },
                 label = "page",
-            ) { (destination, documentId, showPasteText) ->
+            ) { state ->
+                val destination = state.destination
+                val documentId = state.documentId
+                val showPasteText = state.showPasteText
                 val pageTopPadding =
                     if (documentId != null || showPasteText) {
                         collapsedTopBarHeight
@@ -293,19 +396,30 @@ internal fun ReadSpeederApp() {
                     }
 
                 if (documentId != null) {
-                    documents.firstOrNull { it.id == documentId }?.let { document ->
+                    val document = documents.firstOrNull { it.id == documentId }
+                    if (document != null) {
                         ReaderScreen(
                             document = document,
-                            hazeState = hazeState,
+                            settings = settings,
+                            onSettingsChange = onSettingsChange,
+                            hazeState = state.hazeState,
                             backgroundColor = hazeBackgroundColor,
                             topPadding = pageTopPadding,
+                            holdPaused = readerHeld,
                             onProgressChange = { progress ->
                                 val index = documents.indexOfFirst { it.id == document.id }
                                 if (index >= 0 && documents[index].progress != progress) {
                                     documents[index] = documents[index].copy(progress = progress)
+                                    scope.launch(Dispatchers.IO) {
+                                        documentStore.updateProgress(document.id, progress)
+                                    }
                                 }
                             },
                         )
+                    } else if (libraryLoading) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
                     }
                 } else if (showPasteText) {
                     PasteTextScreen(
@@ -316,9 +430,28 @@ internal fun ReadSpeederApp() {
                                 author = null,
                                 text = text,
                             )
-                            documents.add(0, document)
-                            pastingText = false
-                            openedDocument = document
+                            scope.launch {
+                                try {
+                                    withContext(Dispatchers.IO) {
+                                        documentStore.save(document)
+                                    }
+                                    documents.add(0, document)
+                                    libraryStorage = withContext(Dispatchers.IO) {
+                                        documentStore.storage()
+                                    }
+                                    pastingText = false
+                                    documentStore.setActiveDocument(document.id)
+                                    openedDocumentId = document.id
+                                } catch (error: Exception) {
+                                    if (error is CancellationException) throw error
+                                    snackbarHostState.showSnackbar(
+                                        error.message
+                                            ?: resources.getString(
+                                                R.string.document_import_failed,
+                                            ),
+                                    )
+                                }
+                            }
                         },
                         modifier = Modifier.padding(
                             top = pageTopPadding,
@@ -330,6 +463,8 @@ internal fun ReadSpeederApp() {
                         LibraryScreen(
                             state = libraryGridState,
                             documents = documents,
+                            searchQuery = librarySearchQuery.orEmpty(),
+                            sort = settings.librarySort,
                             contentPadding = PaddingValues(
                                 start = 16.dp,
                                 top = pageTopPadding + 16.dp,
@@ -338,12 +473,24 @@ internal fun ReadSpeederApp() {
                             ),
                             modifier = Modifier
                                 .fillMaxSize()
-                                .hazeSource(state = hazeState),
-                            onDocumentClick = { openedDocument = it },
+                                .hazeSource(state = state.hazeState),
+                            onDocumentClick = {
+                                val index = documents.indexOfFirst { document ->
+                                    document.id == it.id
+                                }
+                                if (index > 0) documents.add(0, documents.removeAt(index))
+                                documentStore.setActiveDocument(it.id)
+                                openedDocumentId = it.id
+                            },
+                            onDocumentLongClick = { document, position ->
+                                documentMenuId = document.id
+                                documentMenuAnchor = position
+                                documentMenuExpanded = true
+                            },
                         )
                         AddContentButton(
                             expanded = addContentMenuExpanded,
-                            hazeState = hazeState,
+                            hazeState = state.hazeState,
                             backgroundColor = hazeBackgroundColor,
                             onExpandedChange = { addContentMenuExpanded = it },
                             onBoundsChanged = { addContentMenuBounds = it },
@@ -356,13 +503,38 @@ internal fun ReadSpeederApp() {
                                 .navigationBarsPadding()
                                 .padding(16.dp),
                         )
+                        if (libraryLoading) {
+                            CircularProgressIndicator(Modifier.align(Alignment.Center))
+                        }
                     }
 
                     AppDestination.Settings -> SettingsScreen(
-                        modifier = Modifier.padding(
-                            top = pageTopPadding,
-                            bottom = innerPadding.calculateBottomPadding(),
+                        settings = settings,
+                        storage = libraryStorage,
+                        contentPadding = PaddingValues(
+                            start = 8.dp,
+                            top = pageTopPadding + 8.dp,
+                            end = 8.dp,
+                            bottom = innerPadding.calculateBottomPadding() + 16.dp,
                         ),
+                        hazeState = state.hazeState,
+                        onSettingsChange = onSettingsChange,
+                        onClearLibrary = {
+                            scope.launch {
+                                try {
+                                    withContext(Dispatchers.IO) { documentStore.clear() }
+                                    documents.clear()
+                                    documentStore.setActiveDocument(null)
+                                    openedDocumentId = null
+                                    libraryStorage = LibraryStorage(0, 0)
+                                } catch (error: Exception) {
+                                    if (error is CancellationException) throw error
+                                    snackbarHostState.showSnackbar(
+                                        resources.getString(R.string.library_clear_failed),
+                                    )
+                                }
+                            }
+                        },
                     )
                 }
             }
@@ -372,9 +544,9 @@ internal fun ReadSpeederApp() {
             targetState = pageState,
             transitionSpec = {
                 val direction = when {
-                    targetState.second != null || targetState.third -> 1
-                    initialState.second != null || initialState.third -> -1
-                    targetState.first.ordinal > initialState.first.ordinal -> 1
+                    targetState.documentId != null || targetState.showPasteText -> 1
+                    initialState.documentId != null || initialState.showPasteText -> -1
+                    targetState.destination.ordinal > initialState.destination.ordinal -> 1
                     else -> -1
                 }
                 (
@@ -384,7 +556,10 @@ internal fun ReadSpeederApp() {
                 ).using(null)
             },
             label = "top bar",
-        ) { (destination, documentId, showPasteText) ->
+        ) { state ->
+            val destination = state.destination
+            val documentId = state.documentId
+            val showPasteText = state.showPasteText
             val document = documents.firstOrNull { it.id == documentId }
             ReadSpeederTopBar(
                 scrollBehavior = topBarScrollBehavior,
@@ -401,19 +576,23 @@ internal fun ReadSpeederApp() {
                     documentId != null || showPasteText ||
                         destination == AppDestination.Settings,
                 forceCollapsed = documentId != null || showPasteText,
+                searchQuery = librarySearchQuery,
                 onNavigationClick = {
                     when {
-                        openedDocument != null -> openedDocument = null
+                        openedDocumentId != null -> {
+                            documentStore.setActiveDocument(null)
+                            openedDocumentId = null
+                        }
                         pastingText -> pastingText = false
                         currentDestination == AppDestination.Settings ->
                             currentDestination = AppDestination.Library
                         else -> navigationMenuExpanded = !navigationMenuExpanded
                     }
                 },
-                onSearchClick = { },
-                onFilterClick = { },
+                onSearchQueryChange = { librarySearchQuery = it },
+                onSortClick = { sortMenuExpanded = !sortMenuExpanded },
                 modifier = Modifier
-                    .hazeEffect(state = hazeState) {
+                    .hazeEffect(state = state.hazeState) {
                         blurEffect {
                             backgroundColor = hazeBackgroundColor
                             blurRadius = 24.dp
@@ -439,19 +618,195 @@ internal fun ReadSpeederApp() {
             expanded = navigationMenuExpanded,
             currentDestination = currentDestination,
             topOffset = libraryTopBarHeight,
-            hazeState = hazeState,
+            hazeState = pageState.hazeState,
             backgroundColor = hazeBackgroundColor,
             onBoundsChanged = { navigationMenuBounds = it },
             onDestinationSelected = { destination ->
                 currentDestination = destination
-                openedDocument = null
+                documentStore.setActiveDocument(null)
+                openedDocumentId = null
                 pastingText = false
                 navigationMenuExpanded = false
             },
         )
+
+        SortMenuOverlay(
+            expanded = sortMenuExpanded,
+            currentSort = settings.librarySort,
+            topOffset = libraryTopBarHeight,
+            hazeState = pageState.hazeState,
+            backgroundColor = hazeBackgroundColor,
+            onBoundsChanged = { sortMenuBounds = it },
+            onSortSelected = {
+                onSettingsChange(settings.copy(librarySort = it))
+                sortMenuExpanded = false
+            },
+        )
+
+        DocumentMenuOverlay(
+            expanded = documentMenuExpanded,
+            anchor = documentMenuAnchor,
+            hazeState = pageState.hazeState,
+            backgroundColor = hazeBackgroundColor,
+            onBoundsChanged = { documentMenuBounds = it },
+            onChangeTitle = {
+                val document = documents.firstOrNull { it.id == documentMenuId }
+                if (document != null) {
+                    editDocumentValue = document.title
+                    editingDocumentField = DocumentEditField.Title
+                }
+                documentMenuExpanded = false
+            },
+            onChangeAuthor = {
+                val document = documents.firstOrNull { it.id == documentMenuId }
+                if (document != null) {
+                    editDocumentValue = document.author.orEmpty()
+                    editingDocumentField = DocumentEditField.Author
+                }
+                documentMenuExpanded = false
+            },
+            onDelete = {
+                documentMenuExpanded = false
+                confirmDocumentDelete = true
+            },
+        )
+
+        val documentBeingEdited =
+            documents.firstOrNull { it.id == documentMenuId }
+        val editField = editingDocumentField
+        if (documentBeingEdited != null && editField != null) {
+            AlertDialog(
+                onDismissRequest = { editingDocumentField = null },
+                title = {
+                    Text(
+                        stringResource(
+                            if (editField == DocumentEditField.Title) {
+                                R.string.change_title
+                            } else {
+                                R.string.change_author
+                            },
+                        ),
+                    )
+                },
+                text = {
+                    OutlinedTextField(
+                        value = editDocumentValue,
+                        onValueChange = { editDocumentValue = it },
+                        label = {
+                            Text(
+                                stringResource(
+                                    if (editField == DocumentEditField.Title) {
+                                        R.string.title
+                                    } else {
+                                        R.string.author
+                                    },
+                                ),
+                            )
+                        },
+                        singleLine = true,
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled =
+                            editField == DocumentEditField.Author ||
+                                editDocumentValue.isNotBlank(),
+                        onClick = {
+                            val value = editDocumentValue.trim()
+                            val updated = when (editField) {
+                                DocumentEditField.Title ->
+                                    documentBeingEdited.copy(title = value)
+                                DocumentEditField.Author ->
+                                    documentBeingEdited.copy(author = value.ifEmpty { null })
+                            }
+                            editingDocumentField = null
+                            scope.launch {
+                                try {
+                                    withContext(Dispatchers.IO) {
+                                        documentStore.save(updated, makeRecent = false)
+                                    }
+                                    val index =
+                                        documents.indexOfFirst { it.id == updated.id }
+                                    if (index >= 0) documents[index] = updated
+                                    libraryStorage = withContext(Dispatchers.IO) {
+                                        documentStore.storage()
+                                    }
+                                } catch (error: Exception) {
+                                    if (error is CancellationException) throw error
+                                    snackbarHostState.showSnackbar(
+                                        resources.getString(R.string.document_update_failed),
+                                    )
+                                }
+                            }
+                        },
+                    ) {
+                        Text(stringResource(R.string.save))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { editingDocumentField = null }) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                },
+            )
+        }
+
+        if (confirmDocumentDelete && documentBeingEdited != null) {
+            AlertDialog(
+                onDismissRequest = { confirmDocumentDelete = false },
+                title = { Text(stringResource(R.string.delete_document)) },
+                text = {
+                    Text(
+                        stringResource(
+                            R.string.delete_document_confirmation,
+                            documentBeingEdited.title,
+                        ),
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val id = documentBeingEdited.id
+                            confirmDocumentDelete = false
+                            documentMenuId = null
+                            scope.launch {
+                                try {
+                                    withContext(Dispatchers.IO) {
+                                        documentStore.delete(id)
+                                    }
+                                    documents.removeAll { it.id == id }
+                                    libraryStorage = withContext(Dispatchers.IO) {
+                                        documentStore.storage()
+                                    }
+                                } catch (error: Exception) {
+                                    if (error is CancellationException) throw error
+                                    snackbarHostState.showSnackbar(
+                                        resources.getString(
+                                            R.string.document_delete_failed,
+                                        ),
+                                    )
+                                }
+                            }
+                        },
+                    ) {
+                        Text(
+                            stringResource(R.string.delete),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmDocumentDelete = false }) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                },
+            )
+        }
     }
 }
 
 @Preview(showBackground = true)
 @Composable
-private fun ReadSpeederAppPreview() = ReadSpeederTheme { ReadSpeederApp() }
+private fun ReadSpeederAppPreview() = ReadSpeederTheme {
+    ReadSpeederApp(AppSettings(), {})
+}

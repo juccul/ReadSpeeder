@@ -8,6 +8,9 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.text.Html
 import android.util.Xml
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.fromHtml
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.rendering.PDFRenderer
 import com.tom_roush.pdfbox.text.PDFTextStripper
@@ -21,6 +24,7 @@ private const val MaxDocumentBytes = 50 * 1024 * 1024
 private const val MaxExtractedCharacters = 5_000_000
 private const val MaxCoverDimension = 1_024
 private const val CoverQuality = 85
+private const val FormattedBlockLines = 50
 private val ChapterHeadingPattern = Regex(
     """<h[1-3]\b[^>]*>.*?</h[1-3]>""",
     setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
@@ -29,15 +33,32 @@ private val BodyPattern = Regex(
     """<body\b[^>]*>(.*)</body>""",
     setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
 )
+private val ChapterTitlePrefix = Regex(
+    """(?i)(chapter|part|book)(?:\s+|(?=[ivxlcdm]+\b))""",
+)
 
-private data class ImportedChapter(val title: String, val text: String)
+private data class ImportedChapter(
+    val title: String,
+    val text: String,
+    val formattedText: List<AnnotatedString> = emptyList(),
+    val formattedHtml: String? = null,
+)
 
 private data class ImportedContent(
     val text: String,
+    val formattedText: List<AnnotatedString> = emptyList(),
+    val formattedHtml: List<String> = emptyList(),
     val title: String? = null,
     val author: String? = null,
     val cover: ByteArray? = null,
     val chapters: List<ImportedChapter> = emptyList(),
+    val chapterMarkers: List<DocumentChapter> = emptyList(),
+)
+
+private data class EpubNavigation(
+    val title: String,
+    val path: String,
+    val fragment: String?,
 )
 
 internal object DocumentImporter {
@@ -73,9 +94,9 @@ internal object DocumentImporter {
             "The document contains too much text to import"
         }
         var chapterStart = 0
-        val chapters = normalizedChapters.map { chapter ->
+        val fallbackChapters = normalizedChapters.map { chapter ->
             DocumentChapter(chapter.title, chapterStart).also {
-                chapterStart += chapter.text.split(Regex("\\s+")).size
+                chapterStart += chapter.text.wordCount()
             }
         }
         return ReadDocument(
@@ -83,8 +104,10 @@ internal object DocumentImporter {
             title = content.title ?: name.substringBeforeLast('.').ifBlank { name },
             author = content.author,
             text = normalizedText,
+            formattedText = content.formattedText,
+            formattedHtml = content.formattedHtml,
             cover = content.cover,
-            chapters = chapters,
+            chapters = content.chapterMarkers.ifEmpty { fallbackChapters },
         )
     }
 }
@@ -139,6 +162,7 @@ private fun extractEpub(stream: InputStream): ImportedContent {
     var author: String? = null
     var coverId: String? = null
     var coverPath: String? = null
+    var navigationPath: String? = null
     packageDocument.parseXml { parser ->
         when (parser.name) {
             "title" -> if (title == null) {
@@ -170,6 +194,8 @@ private fun extractEpub(stream: InputStream): ImportedContent {
                         ) {
                             coverPath = path
                         }
+                    } else if (mediaType == "application/x-dtbncx+xml") {
+                        navigationPath = path
                     }
                 }
             }
@@ -182,14 +208,32 @@ private fun extractEpub(stream: InputStream): ImportedContent {
     val contentItems = spine.mapNotNull { id -> manifest[id]?.let { id to it } }
         .ifEmpty { manifest.toList() }
     require(contentItems.isNotEmpty()) { "No readable chapters were found in this EPUB" }
+    val navigation = navigationPath
+        ?.let { path -> entries[path]?.extractNcxNavigation(path) }
+        .orEmpty()
+        .let { entries ->
+            entries.filter { ChapterTitlePrefix.containsMatchIn(it.title) }
+                .ifEmpty { entries }
+        }
+    val navigationByPath = navigation.groupBy(EpubNavigation::path)
+    val chapterMarkers = mutableListOf<DocumentChapter>()
+    var precedingWords = 0
     var currentPart: String? = null
-    val chapters = contentItems.mapNotNull { (id, path) ->
-        entries[path]?.let { id to it }
-    }.mapIndexedNotNull { index, (id, bytes) ->
+    val chapters = contentItems.mapIndexedNotNull { index, (id, path) ->
+        val bytes = entries[path] ?: return@mapIndexedNotNull null
         val html = bytes.decodeText()
         val body = BodyPattern.find(html)?.groupValues?.get(1) ?: html
         val text = Html.fromHtml(body, Html.FROM_HTML_MODE_LEGACY).toString()
         if (text.isBlank()) return@mapIndexedNotNull null
+        navigationByPath[path].orEmpty().forEach { entry ->
+            body.wordOffsetAt(entry.fragment)?.let { offset ->
+                chapterMarkers += DocumentChapter(
+                    cleanEpubChapterTitle(entry.title),
+                    precedingWords + offset,
+                )
+            }
+        }
+        precedingWords += text.normalizeDocumentText().wordCount()
         val headings = body.extractHeadings()
         headings.firstOrNull { it.startsWith("Part ", ignoreCase = true) }
             ?.let { currentPart = it }
@@ -203,18 +247,90 @@ private fun extractEpub(stream: InputStream): ImportedContent {
                 "$currentPart · $heading"
             else -> headings.joinToString(" · ")
         }
-        ImportedChapter(chapterTitle, text)
+        val formattedText = formatHtmlBlocks(listOf(body))
+        ImportedChapter(chapterTitle, text, formattedText, body)
     }
     val cover = (coverPath ?: coverId?.let(images::get))
         ?.let(entries::get)
         ?.toThumbnail()
     return ImportedContent(
         text = chapters.joinToString("\n\n", transform = ImportedChapter::text),
+        formattedText = chapters.flatMap(ImportedChapter::formattedText),
+        formattedHtml = chapters.mapNotNull(ImportedChapter::formattedHtml),
         title = title,
         author = author,
         cover = cover,
         chapters = chapters,
+        chapterMarkers = chapterMarkers.distinctBy(DocumentChapter::startWord),
     )
+}
+
+private fun ByteArray.extractNcxNavigation(path: String): List<EpubNavigation> {
+    val parser = Xml.newPullParser().apply {
+        setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
+        setFeature(XmlPullParser.FEATURE_PROCESS_DOCDECL, false)
+        setInput(inputStream(), null)
+    }
+    val entries = mutableListOf<EpubNavigation>()
+    var navPointDepth = 0
+    var label: String? = null
+    while (parser.next() != XmlPullParser.END_DOCUMENT) {
+        when (parser.eventType) {
+            XmlPullParser.START_TAG -> when (parser.name) {
+                "navPoint" -> {
+                    navPointDepth++
+                    label = null
+                }
+
+                "text" -> if (navPointDepth > 0 && label == null) {
+                    label = parser.nextText().normalizeDocumentText().replace('\n', ' ')
+                }
+
+                "content" -> if (navPointDepth > 0) {
+                    val source = parser.getAttributeValue(null, "src")?.let(Uri::decode)
+                    val title = label
+                    if (source != null && title != null) {
+                        entries += EpubNavigation(
+                            title = title,
+                            path = resolveEpubPath(path, source.substringBefore('#')),
+                            fragment = source.substringAfter('#', "").takeIf(String::isNotEmpty),
+                        )
+                    }
+                }
+            }
+
+            XmlPullParser.END_TAG -> if (parser.name == "navPoint") navPointDepth--
+        }
+    }
+    return entries
+}
+
+internal fun cleanEpubChapterTitle(label: String): String {
+    val normalized = label.normalizeDocumentText().replace('\n', ' ')
+    val prefix = ChapterTitlePrefix.findAll(normalized).lastOrNull() ?: return normalized
+    val kind = prefix.groupValues[1].lowercase().replaceFirstChar(Char::uppercase)
+    return "$kind ${normalized.substring(prefix.range.last + 1).trimStart()}"
+}
+
+internal fun formatHtmlBlocks(html: List<String>): List<AnnotatedString> =
+    html.flatMap { body ->
+        buildAnnotatedString {
+            append(AnnotatedString.fromHtml(body))
+            append("\n")
+        }.chunkedLines()
+    }
+
+private fun AnnotatedString.chunkedLines(): List<AnnotatedString> = buildList {
+    var start = 0
+    var lines = 0
+    text.forEachIndexed { index, character ->
+        if (character == '\n' && ++lines == FormattedBlockLines) {
+            add(subSequence(start, index))
+            start = index + 1
+            lines = 0
+        }
+    }
+    if (start < length) add(subSequence(start, length))
 }
 
 private fun String.extractHeadings(): List<String> =
@@ -225,6 +341,21 @@ private fun String.extractHeadings(): List<String> =
             .replace('\n', ' ')
             .takeIf(String::isNotEmpty)
     }.toList()
+
+private fun String.wordOffsetAt(fragment: String?): Int? {
+    if (fragment == null) return 0
+    val anchor = Regex(
+        """<[^>]+\b(?:id|name)\s*=\s*["']${Regex.escape(fragment)}["'][^>]*>""",
+        RegexOption.IGNORE_CASE,
+    ).find(this) ?: return null
+    return Html.fromHtml(
+        substring(0, anchor.range.first),
+        Html.FROM_HTML_MODE_LEGACY,
+    ).toString().normalizeDocumentText().wordCount()
+}
+
+private fun String.wordCount(): Int =
+    if (isBlank()) 0 else split(Regex("\\s+")).size
 
 private fun String?.cleanMetadata(): String? =
     this?.trim()?.takeIf(String::isNotEmpty)

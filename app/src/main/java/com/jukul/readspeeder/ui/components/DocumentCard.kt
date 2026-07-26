@@ -2,6 +2,9 @@ package com.jukul.readspeeder.ui.components
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,14 +17,22 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.jukul.readspeeder.R
 
 @Composable
 internal fun DocumentCard(
@@ -30,8 +41,12 @@ internal fun DocumentCard(
     cover: ByteArray?,
     progress: Int,
     onClick: () -> Unit,
+    onLongClick: (Offset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val optionsLabel = stringResource(R.string.document_options)
+    val coordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val pressPosition = remember { mutableStateOf(Offset.Zero) }
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -40,8 +55,25 @@ internal fun DocumentCard(
             cover?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
         }
         Card(
-            onClick = onClick,
-            modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(2f / 3f)
+                .onGloballyPositioned { coordinates.value = it }
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(
+                            requireUnconsumed = false,
+                            pass = PointerEventPass.Initial,
+                        )
+                        pressPosition.value =
+                            coordinates.value?.localToRoot(down.position) ?: down.position
+                    }
+                }
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClickLabel = optionsLabel,
+                    onLongClick = { onLongClick(pressPosition.value) },
+                ),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
             ),

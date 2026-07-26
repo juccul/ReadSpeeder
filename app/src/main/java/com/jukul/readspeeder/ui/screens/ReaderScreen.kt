@@ -1,38 +1,54 @@
 package com.jukul.readspeeder.ui.screens
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.view.WindowManager
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.FastRewind
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -40,63 +56,126 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.jukul.readspeeder.R
+import com.jukul.readspeeder.data.AppSettings
 import com.jukul.readspeeder.data.DocumentChapter
+import com.jukul.readspeeder.data.MaxWpm
+import com.jukul.readspeeder.data.MinWpm
 import com.jukul.readspeeder.data.ReadDocument
+import com.jukul.readspeeder.data.ReaderMode
+import com.jukul.readspeeder.data.ReadingAlignment
+import com.jukul.readspeeder.data.ReadingFont
+import com.jukul.readspeeder.data.WpmStep
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeProgressive
 import dev.chrisbanes.haze.blur.blurEffect
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.math.roundToInt
-
-private const val DefaultWpm = 300
-private const val MinWpm = 50
-private const val MaxWpm = 1_000
-private const val WpmStep = 5
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ReaderScreen(
     document: ReadDocument,
+    settings: AppSettings,
+    onSettingsChange: (AppSettings) -> Unit,
     hazeState: HazeState,
     backgroundColor: Color,
     topPadding: Dp,
+    holdPaused: Boolean,
     onProgressChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val readerText = remember(document.id, document.text) { parseReaderText(document.text) }
+    val context = LocalContext.current
+    val readerText = remember(
+        document.id,
+        document.text,
+        settings.splitHyphenatedWords,
+    ) {
+        parseReaderText(document.text, settings.splitHyphenatedWords)
+    }
     val words = readerText.words
     val sentences = readerText.sentences
+    val previewSegments = readerText.previewSegments
+    val wordFrequencies = remember(document.id, words) {
+        words.asSequence()
+            .map(String::normalizedWord)
+            .filter(String::isNotEmpty)
+            .groupingBy { it }
+            .eachCount()
+    }
+    val standardBlocks = remember(document.id, document.text, document.formattedText) {
+        document.formattedText.ifEmpty {
+            document.text.lineSequence()
+                .chunked(50) { AnnotatedString(it.joinToString("\n")) }
+                .toList()
+        }
+    }
+    val blockWordStarts = remember(standardBlocks, settings.splitHyphenatedWords) {
+        buildList {
+            var wordCount = 0
+            standardBlocks.forEach {
+                add(wordCount)
+                wordCount += it.text.wordCount(settings.splitHyphenatedWords)
+            }
+        }
+    }
+    val standardListState = rememberLazyListState()
     var wordIndex by remember(document.id, words.size) {
         val lastIndex = words.lastIndex.coerceAtLeast(0)
         mutableIntStateOf((lastIndex * document.progress / 100f).roundToInt())
     }
     var playing by remember(document.id) { mutableStateOf(false) }
-    var standardMode by remember(document.id) { mutableStateOf(false) }
-    var wpm by remember(document.id) { mutableIntStateOf(DefaultWpm) }
+    var standardMode by remember(document.id) {
+        mutableStateOf(settings.defaultReader == ReaderMode.Standard)
+    }
+    var wpm by remember(document.id) { mutableIntStateOf(settings.defaultWpm) }
     var chapterMenuExpanded by remember(document.id) { mutableStateOf(false) }
+    var countdown by remember(document.id) { mutableIntStateOf(0) }
+    var controlsVisible by remember(document.id) { mutableStateOf(true) }
     val sentenceIndex = sentences.binarySearchBy(wordIndex) { it.firstWord }.let {
+        if (it >= 0) it else (-it - 2).coerceAtLeast(0)
+    }
+    val previewSegmentIndex = previewSegments.binarySearchBy(wordIndex) { it.firstWord }.let {
         if (it >= 0) it else (-it - 2).coerceAtLeast(0)
     }
     val progressDescription = stringResource(R.string.reading_progress)
@@ -106,9 +185,69 @@ internal fun ReaderScreen(
         inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
     )
 
-    LaunchedEffect(playing, wpm, wordIndex, words.size) {
-        if (playing && words.isNotEmpty()) {
-            delay(60_000L / wpm)
+    DisposableEffect(document.id, settings.keepScreenAwake) {
+        val activity = context.findActivity()
+        val wasKeepingScreenAwake =
+            ((activity?.window?.attributes?.flags ?: 0) and
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0
+        if (settings.keepScreenAwake) {
+            activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            if (!wasKeepingScreenAwake) {
+                activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+    }
+    LaunchedEffect(countdown) {
+        if (countdown > 0) {
+            delay(1_000)
+            if (countdown == 1) {
+                countdown = 0
+                playing = true
+            } else {
+                countdown--
+            }
+        }
+    }
+    LaunchedEffect(
+        playing,
+        holdPaused,
+        settings.autoHideControls,
+        controlsVisible,
+        standardMode,
+    ) {
+        if (
+            playing && !holdPaused && settings.autoHideControls &&
+            controlsVisible && !standardMode
+        ) {
+            delay(2_000)
+            controlsVisible = false
+        } else if (!playing || holdPaused || !settings.autoHideControls || standardMode) {
+            controlsVisible = true
+        }
+    }
+    LaunchedEffect(
+        playing,
+        holdPaused,
+        wpm,
+        wordIndex,
+        words.size,
+        settings.smartPauses,
+        settings.complexWordPauses,
+    ) {
+        if (playing && !holdPaused && words.isNotEmpty()) {
+            val word = words[wordIndex]
+            delay(
+                wordDelayMillis(
+                    word = word,
+                    wpm = wpm,
+                    smartPauses = settings.smartPauses,
+                    complexWordPauses = settings.complexWordPauses,
+                    occurrences = wordFrequencies[word.normalizedWord()] ?: 0,
+                    totalWords = words.size,
+                ),
+            )
             if (wordIndex < words.lastIndex) {
                 wordIndex++
             } else {
@@ -121,13 +260,75 @@ internal fun ReaderScreen(
             (wordIndex * 100f / maxOf(1, words.lastIndex)).roundToInt(),
         )
     }
+    LaunchedEffect(standardMode, standardBlocks) {
+        if (!standardMode || standardBlocks.isEmpty()) return@LaunchedEffect
+        val blockIndex = blockWordStarts.indexAt(wordIndex)
+        standardListState.scrollToItem(blockIndex)
+        withFrameNanos {}
+        val itemSize = standardListState.layoutInfo.visibleItemsInfo
+            .firstOrNull { it.index == blockIndex }
+            ?.size
+            ?.coerceAtLeast(1)
+            ?: 1
+        val blockStart = blockWordStarts[blockIndex]
+        val blockWords = (
+            blockWordStarts.getOrElse(blockIndex + 1) { words.size } - blockStart
+        ).coerceAtLeast(1)
+        // ponytail: proportional within 50-line blocks; use per-word text bounds if exact offsets matter.
+        standardListState.scrollToItem(
+            blockIndex,
+            (itemSize * (wordIndex - blockStart) / blockWords.toFloat()).roundToInt(),
+        )
+        snapshotFlow {
+            Triple(
+                standardListState.firstVisibleItemIndex,
+                standardListState.firstVisibleItemScrollOffset,
+                standardListState.isScrollInProgress,
+            )
+        }.distinctUntilChanged().collect { (index, offset, scrolling) ->
+            if (!scrolling) return@collect
+            val visible = standardListState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.index == index }
+                ?: return@collect
+            val start = blockWordStarts.getOrElse(index) { 0 }
+            val count = (
+                blockWordStarts.getOrElse(index + 1) { words.size } - start
+            ).coerceAtLeast(1)
+            wordIndex = (
+                start + count * offset / visible.size.coerceAtLeast(1).toFloat()
+            ).roundToInt().coerceIn(0, words.lastIndex.coerceAtLeast(0))
+        }
+    }
 
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .pointerInput(controlsVisible) {
+                if (!controlsVisible) {
+                    awaitEachGesture {
+                        awaitFirstDown(
+                            requireUnconsumed = false,
+                            pass = PointerEventPass.Initial,
+                        ).consume()
+                        do {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            event.changes.forEach { it.consume() }
+                        } while (event.changes.any { it.pressed })
+                        controlsVisible = true
+                    }
+                }
+            },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             NavigationBar(
                 modifier = Modifier
+                    .graphicsLayer {
+                        alpha = if (controlsVisible || standardMode) 1f else 0f
+                    }
+                    .then(
+                        if (controlsVisible || standardMode) Modifier
+                        else Modifier.clearAndSetSemantics {},
+                    )
                     .hazeEffect(state = hazeState) {
                         blurEffect {
                             this.backgroundColor = backgroundColor
@@ -152,7 +353,11 @@ internal fun ReaderScreen(
             ) {
                 NavigationBarItem(
                     selected = !standardMode,
-                    onClick = { standardMode = false },
+                    onClick = {
+                        standardMode = false
+                        onSettingsChange(settings.copy(defaultReader = ReaderMode.Speed))
+                    },
+                    enabled = controlsVisible,
                     icon = { Icon(Icons.Default.Speed, null) },
                     label = { Text(stringResource(R.string.speed)) },
                     modifier = Modifier.offset(y = 4.dp),
@@ -162,7 +367,10 @@ internal fun ReaderScreen(
                     onClick = {
                         standardMode = true
                         playing = false
+                        countdown = 0
+                        onSettingsChange(settings.copy(defaultReader = ReaderMode.Standard))
                     },
+                    enabled = controlsVisible,
                     icon = { Icon(Icons.Default.Description, null) },
                     label = { Text(stringResource(R.string.standard)) },
                     modifier = Modifier.offset(y = 4.dp),
@@ -171,23 +379,39 @@ internal fun ReaderScreen(
         },
     ) { innerPadding ->
         if (standardMode) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .hazeSource(hazeState)
-                    .verticalScroll(rememberScrollState())
-                    .padding(
-                        start = 24.dp,
+            val fontSize = settings.textSize.sp
+            val textStyle = MaterialTheme.typography.bodyLarge.copy(
+                fontFamily = when (settings.readingFont) {
+                    ReadingFont.SansSerif ->
+                        MaterialTheme.typography.bodyLarge.fontFamily
+                    ReadingFont.Serif -> FontFamily.Serif
+                },
+                fontSize = fontSize,
+                lineHeight = fontSize * settings.lineSpacing,
+                textAlign = when (settings.alignment) {
+                    ReadingAlignment.Start -> TextAlign.Start
+                    ReadingAlignment.Justified -> TextAlign.Justify
+                },
+            )
+            SelectionContainer {
+                LazyColumn(
+                    state = standardListState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .hazeSource(hazeState),
+                    contentPadding = PaddingValues(
+                        start = settings.horizontalMargin.dp,
                         top = topPadding + 24.dp,
-                        end = 24.dp,
+                        end = settings.horizontalMargin.dp,
                         bottom = innerPadding.calculateBottomPadding() + 24.dp,
                     ),
-            ) {
-                SelectionContainer {
-                    Text(
-                        text = document.text,
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
+                ) {
+                    items(standardBlocks) { block ->
+                        Text(
+                            text = block,
+                            style = textStyle,
+                        )
+                    }
                 }
             }
         } else {
@@ -210,25 +434,28 @@ internal fun ReaderScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(20.dp),
                     ) {
-                        Text(
-                            text = sentences.getOrNull(sentenceIndex)?.text.orEmpty(),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyLarge,
-                            textAlign = TextAlign.Center,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
+                        SentencePreview(
+                            sentence = previewSegments.getOrNull(previewSegmentIndex),
+                            words = words,
+                            wordIndex = wordIndex,
+                            visible = settings.sentencePreview && countdown == 0,
                         )
-                        val focus = remember(word) { word.focusCharacterRange() }
+                        val displayedWord = if (countdown > 0) countdown.toString() else word
+                        val focus = remember(displayedWord) {
+                            displayedWord.focusCharacterRange()
+                        }
                         val focusStart = focus.first.coerceAtLeast(0)
                         val focusEnd = if (focus.isEmpty()) focusStart else focus.last + 1
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clearAndSetSemantics { contentDescription = word },
+                                .clearAndSetSemantics {
+                                    contentDescription = displayedWord
+                                },
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = word.take(focusStart),
+                                text = displayedWord.take(focusStart),
                                 modifier = Modifier
                                     .weight(1f)
                                     .wrapContentWidth(Alignment.End, unbounded = true),
@@ -242,10 +469,16 @@ internal fun ReaderScreen(
                                     Modifier
                                         .width(2.dp)
                                         .height(10.dp)
-                                        .background(MaterialTheme.colorScheme.onSurface),
+                                        .background(
+                                            if (settings.focusGuides && countdown == 0) {
+                                                MaterialTheme.colorScheme.onSurface
+                                            } else {
+                                                Color.Transparent
+                                            },
+                                        ),
                                 )
                                 Text(
-                                    text = word.substring(focusStart, focusEnd),
+                                    text = displayedWord.substring(focusStart, focusEnd),
                                     style = MaterialTheme.typography.displayMedium,
                                     maxLines = 1,
                                 )
@@ -253,11 +486,17 @@ internal fun ReaderScreen(
                                     Modifier
                                         .width(2.dp)
                                         .height(10.dp)
-                                        .background(MaterialTheme.colorScheme.onSurface),
+                                        .background(
+                                            if (settings.focusGuides && countdown == 0) {
+                                                MaterialTheme.colorScheme.onSurface
+                                            } else {
+                                                Color.Transparent
+                                            },
+                                        ),
                                 )
                             }
                             Text(
-                                text = word.drop(focusEnd),
+                                text = displayedWord.drop(focusEnd),
                                 modifier = Modifier
                                     .weight(1f)
                                     .wrapContentWidth(Alignment.Start, unbounded = true),
@@ -271,21 +510,39 @@ internal fun ReaderScreen(
                         ChapterSelector(
                             chapters = document.chapters,
                             currentChapter = document.chapters
-                                .lastOrNull { it.startWord <= wordIndex }
+                                .lastOrNull {
+                                    readerText.flashIndex(it.startWord) <= wordIndex
+                                }
                                 ?: document.chapters.first(),
                             expanded = chapterMenuExpanded,
                             onExpandedChange = { chapterMenuExpanded = it },
                             onChapterSelected = {
                                 playing = false
-                                wordIndex = it.startWord.coerceAtMost(words.lastIndex)
+                                countdown = 0
+                                wordIndex = readerText.flashIndex(it.startWord)
+                                    .coerceAtMost(words.lastIndex)
                                 chapterMenuExpanded = false
                             },
-                            modifier = Modifier.align(Alignment.BottomCenter),
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .graphicsLayer {
+                                    alpha = if (controlsVisible) 1f else 0f
+                                }
+                                .then(
+                                    if (controlsVisible) Modifier
+                                    else Modifier.clearAndSetSemantics {},
+                                ),
                         )
                     }
                 }
                 Column(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .graphicsLayer { alpha = if (controlsVisible) 1f else 0f }
+                        .then(
+                            if (controlsVisible) Modifier
+                            else Modifier.clearAndSetSemantics {},
+                        ),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.SpaceBetween,
                 ) {
@@ -293,6 +550,7 @@ internal fun ReaderScreen(
                         value = wordIndex.toFloat(),
                         onValueChange = {
                             playing = false
+                            countdown = 0
                             wordIndex = it.roundToInt()
                         },
                         modifier = Modifier
@@ -332,6 +590,7 @@ internal fun ReaderScreen(
                     ) {
                         IconButton(
                             onClick = {
+                                countdown = 0
                                 wordIndex = sentences[sentenceIndex - 1].firstWord
                             },
                             modifier = Modifier.size(56.dp),
@@ -344,18 +603,35 @@ internal fun ReaderScreen(
                             )
                         }
                         IconButton(
-                            onClick = { playing = !playing },
+                            onClick = {
+                                if (playing || countdown > 0) {
+                                    playing = false
+                                    countdown = 0
+                                } else if (settings.playbackCountdown) {
+                                    countdown = 3
+                                } else {
+                                    playing = true
+                                }
+                            },
                             modifier = Modifier.size(56.dp),
                             enabled = words.isNotEmpty(),
                         ) {
                             Icon(
-                                if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                stringResource(if (playing) R.string.pause else R.string.play),
+                                if (playing || countdown > 0) {
+                                    Icons.Rounded.Pause
+                                } else {
+                                    Icons.Rounded.PlayArrow
+                                },
+                                stringResource(
+                                    if (playing || countdown > 0) R.string.pause
+                                    else R.string.play,
+                                ),
                                 Modifier.size(56.dp),
                             )
                         }
                         IconButton(
                             onClick = {
+                                countdown = 0
                                 wordIndex = sentences[sentenceIndex + 1].firstWord
                             },
                             modifier = Modifier.size(56.dp),
@@ -374,6 +650,9 @@ internal fun ReaderScreen(
                             wpm = ((it / WpmStep).roundToInt() * WpmStep)
                                 .coerceIn(MinWpm, MaxWpm)
                         },
+                        onValueChangeFinished = {
+                            onSettingsChange(settings.copy(defaultWpm = wpm))
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         valueRange = MinWpm.toFloat()..MaxWpm.toFloat(),
                     )
@@ -388,18 +667,155 @@ internal fun ReaderScreen(
     }
 }
 
-private data class ReaderText(
-    val words: List<String>,
-    val sentences: List<ReaderSentence>,
-)
+@Composable
+private fun SentencePreview(
+    sentence: ReaderSegment?,
+    words: List<String>,
+    wordIndex: Int,
+    visible: Boolean,
+) {
+    val scrollState = rememberScrollState()
+    var layout by remember(sentence) { mutableStateOf<TextLayoutResult?>(null) }
+    var firstVisibleLine by remember(sentence) { mutableIntStateOf(0) }
+    val highlight = remember { Animatable(1f) }
+    val textStyle = MaterialTheme.typography.bodyLarge
+    val lineHeight = with(LocalDensity.current) { textStyle.lineHeight.toDp() }
+    val previewHeight = lineHeight * 3
+    val wordRange = remember(sentence, wordIndex, words) {
+        if (sentence == null || wordIndex !in sentence.firstWord..sentence.lastWord) {
+            IntRange.EMPTY
+        } else {
+            val start = (sentence.firstWord until wordIndex)
+                .sumOf { words[it].length + 1 }
+            start until start + words[wordIndex].length
+        }
+    }
 
-private data class ReaderSentence(
+    LaunchedEffect(wordIndex) {
+        highlight.snapTo(0.55f)
+        highlight.animateTo(1f, tween(120))
+    }
+    LaunchedEffect(sentence) {
+        firstVisibleLine = 0
+        scrollState.scrollTo(0)
+    }
+    LaunchedEffect(wordIndex, sentence, layout, visible) {
+        val textLayout = layout
+        if (!visible || textLayout == null || wordRange.isEmpty()) return@LaunchedEffect
+        val line = textLayout.getLineForOffset(wordRange.first)
+        val targetLine = previewStartLine(firstVisibleLine, line)
+            .coerceAtMost(textLayout.lineCount - 1)
+        if (targetLine == firstVisibleLine) return@LaunchedEffect
+        firstVisibleLine = targetLine
+    }
+    LaunchedEffect(firstVisibleLine, sentence, layout, visible) {
+        val textLayout = layout
+        if (!visible || textLayout == null) return@LaunchedEffect
+        scrollState.animateScrollTo(
+            textLayout.getLineTop(firstVisibleLine)
+                .roundToInt()
+                .coerceIn(0, scrollState.maxValue),
+            tween(240),
+        )
+    }
+
+    val preview = buildAnnotatedString {
+        val text = sentence?.text.orEmpty()
+        if (wordRange.isEmpty()) {
+            append(text)
+        } else {
+            append(text.take(wordRange.first))
+            withStyle(
+                SpanStyle(
+                    background = MaterialTheme.colorScheme.secondaryContainer.copy(
+                        alpha = 0.7f * highlight.value,
+                    ),
+                    color = lerp(
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                        MaterialTheme.colorScheme.onSecondaryContainer,
+                        highlight.value,
+                    ),
+                ),
+            ) {
+                append(text.substring(wordRange))
+            }
+            append(text.drop(wordRange.last + 1))
+        }
+    }
+    Text(
+        text = preview,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(previewHeight)
+            .clipToBounds()
+            .verticalScroll(scrollState, enabled = false)
+            .padding(bottom = lineHeight * 2)
+            .graphicsLayer { alpha = if (visible) 1f else 0f }
+            .then(if (visible) Modifier else Modifier.clearAndSetSemantics {}),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = textStyle,
+        textAlign = TextAlign.Center,
+        overflow = TextOverflow.Clip,
+        onTextLayout = { layout = it },
+    )
+}
+
+internal fun previewStartLine(currentStart: Int, highlightedLine: Int): Int =
+    if (highlightedLine >= currentStart + 2 || highlightedLine < currentStart) {
+        highlightedLine / 2 * 2
+    } else {
+        currentStart
+    }
+
+internal fun wordDelayMillis(
+    word: String,
+    wpm: Int,
+    smartPauses: Boolean,
+    complexWordPauses: Boolean = false,
+    occurrences: Int = 0,
+    totalWords: Int = 0,
+): Long {
+    val base = 60_000.0 / wpm.coerceIn(MinWpm, MaxWpm)
+    val punctuation = word.trimEnd { it in "\"'”’»)]}" }.lastOrNull()
+    val punctuationMultiplier = when {
+        !smartPauses -> 1.0
+        punctuation != null && punctuation in ".!?…。！？" -> 3.0
+        punctuation != null && punctuation in ",;:，；：" -> 2.0
+        else -> 1.0
+    }
+    val complexityExtra = if (complexWordPauses) {
+        word.complexityExtra(occurrences, totalWords)
+    } else {
+        0.0
+    }
+    return (base * (punctuationMultiplier + complexityExtra)).toLong()
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
+internal data class ReaderText(
+    val words: List<String>,
+    val sentences: List<ReaderSegment>,
+    val previewSegments: List<ReaderSegment>,
+    private val sourceWordStarts: IntArray,
+) {
+    fun flashIndex(sourceWord: Int): Int =
+        sourceWordStarts.getOrElse(sourceWord.coerceAtLeast(0)) { words.size }
+            .coerceAtMost(words.lastIndex.coerceAtLeast(0))
+}
+
+internal data class ReaderSegment(
     val text: String,
     val firstWord: Int,
+    val lastWord: Int,
 )
 
-private fun parseReaderText(text: String): ReaderText {
-    val words = buildList {
+internal fun parseReaderText(text: String, splitHyphenatedWords: Boolean): ReaderText {
+    val sourceWords = buildList {
         var start = 0
         while (start < text.length) {
             while (start < text.length && text[start].isWhitespace()) start++
@@ -410,37 +826,89 @@ private fun parseReaderText(text: String): ReaderText {
             start = end
         }
     }
-    if (words.isEmpty()) return ReaderText(emptyList(), emptyList())
+    if (sourceWords.isEmpty()) {
+        return ReaderText(emptyList(), emptyList(), emptyList(), IntArray(0))
+    }
 
-    val sentences = buildList {
-        var firstWord = 0
-        words.forEachIndexed { index, word ->
-            val nextStart = words.getOrNull(index + 1)?.first ?: text.length
-            if (
-                index == words.lastIndex ||
-                text.endsSentence(word) ||
-                text.hasParagraphBreak(word.last + 1, nextStart)
-            ) {
-                add(
-                    ReaderSentence(
-                        text = (firstWord..index).joinToString(" ") {
-                            text.substring(words[it])
-                        },
-                        firstWord = firstWord,
-                    ),
-                )
-                firstWord = index + 1
-            }
+    val words = mutableListOf<String>()
+    val paragraphEnds = mutableListOf<Boolean>()
+    val sourceWordStarts = IntArray(sourceWords.size + 1)
+    sourceWords.forEachIndexed { index, range ->
+        sourceWordStarts[index] = words.size
+        text.substring(range).flashWords(splitHyphenatedWords).forEach {
+            words += it
+            paragraphEnds += false
+        }
+        val nextStart = sourceWords.getOrNull(index + 1)?.first ?: text.length
+        paragraphEnds[paragraphEnds.lastIndex] =
+            text.hasParagraphBreak(range.last + 1, nextStart)
+    }
+    sourceWordStarts[sourceWords.size] = words.size
+    return ReaderText(
+        words = words,
+        sentences = words.segments(paragraphEnds, includeClauses = false),
+        previewSegments = words.segments(paragraphEnds, includeClauses = true),
+        sourceWordStarts = sourceWordStarts,
+    )
+}
+
+private fun List<String>.segments(
+    paragraphEnds: List<Boolean>,
+    includeClauses: Boolean,
+): List<ReaderSegment> = buildList {
+    var firstWord = 0
+    this@segments.forEachIndexed { index, word ->
+        if (
+            index == this@segments.lastIndex ||
+            word.endsSegment(includeClauses) ||
+            paragraphEnds[index]
+        ) {
+            add(
+                ReaderSegment(
+                    text = this@segments.subList(firstWord, index + 1)
+                        .joinToString(" "),
+                    firstWord = firstWord,
+                    lastWord = index,
+                ),
+            )
+            firstWord = index + 1
         }
     }
-    return ReaderText(words.map { text.substring(it) }, sentences)
 }
 
-private fun String.endsSentence(range: IntRange): Boolean {
-    var index = range.last
-    while (index >= range.first && this[index] in "\"'”’»)]}") index--
-    return index >= range.first && this[index] in ".!?…。！？"
+private fun String.endsSegment(includeClauses: Boolean): Boolean {
+    val punctuation = trimEnd { it in "\"'”’»)]}" }.lastOrNull()
+    return punctuation != null && punctuation in if (includeClauses) {
+        ".!?…。！？,;:，；："
+    } else {
+        ".!?…。！？"
+    }
 }
+
+private fun String.flashWords(splitHyphenatedWords: Boolean): List<String> {
+    if (!splitHyphenatedWords) return listOf(this)
+    val words = mutableListOf<String>()
+    var start = 0
+    for (index in indices) {
+        if (
+            this[index].isWordHyphen() &&
+            index > start &&
+            index < lastIndex &&
+            this[index - 1].isLetterOrDigit() &&
+            this[index + 1].isLetterOrDigit()
+        ) {
+            words += substring(start, index)
+            start = index + 1
+        }
+    }
+    if (words.isEmpty()) return listOf(this)
+    words += substring(start)
+    return words
+}
+
+private fun Char.isWordHyphen(): Boolean =
+    Character.getType(this) == Character.DASH_PUNCTUATION.toInt() ||
+        this == '\u00AD' || this == '\u2212'
 
 private fun String.hasParagraphBreak(start: Int, end: Int): Boolean {
     var newlines = 0
@@ -448,6 +916,47 @@ private fun String.hasParagraphBreak(start: Int, end: Int): Boolean {
         if (this[index] == '\n' && ++newlines == 2) return true
     }
     return false
+}
+
+private fun String.normalizedWord(): String =
+    lowercase().filter(Char::isLetter)
+
+private fun String.wordCount(splitHyphenatedWords: Boolean): Int {
+    var count = 0
+    var start = 0
+    while (start < length) {
+        while (start < length && this[start].isWhitespace()) start++
+        if (start == length) break
+        var end = start + 1
+        while (end < length && !this[end].isWhitespace()) end++
+        count += substring(start, end).flashWords(splitHyphenatedWords).size
+        start = end
+    }
+    return count
+}
+
+private fun List<Int>.indexAt(wordIndex: Int): Int {
+    val result = binarySearch(wordIndex)
+    return if (result >= 0) result else (-result - 2).coerceAtLeast(0)
+}
+
+private fun String.complexityExtra(occurrences: Int, totalWords: Int): Double {
+    val letters = normalizedWord()
+    if (letters.isEmpty()) return 0.0
+    // ponytail: English vowel heuristic; replace with language-aware syllabification if needed.
+    var syllables = 0
+    var wasVowel = false
+    letters.forEach {
+        val isVowel = it in "aeiouy"
+        if (isVowel && !wasVowel) syllables++
+        wasVowel = isVowel
+    }
+    val signals = listOf(
+        occurrences in 1..maxOf(1, totalWords / 10_000),
+        letters.length >= 12,
+        syllables >= 4 || ('-' in this && letters.length >= 8),
+    ).count { it }
+    return signals.coerceAtMost(3) * 0.4
 }
 
 private fun String.focusCharacterRange(): IntRange {
@@ -485,6 +994,7 @@ private fun Int.isCombiningMark(): Boolean = when (Character.getType(this)) {
     else -> false
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChapterSelector(
     chapters: List<DocumentChapter>,
@@ -494,6 +1004,14 @@ private fun ChapterSelector(
     onChapterSelected: (DocumentChapter) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val listState = rememberLazyListState()
+    LaunchedEffect(expanded, currentChapter) {
+        if (expanded) {
+            listState.scrollToItem(chapters.indexOf(currentChapter).coerceAtLeast(0))
+        }
+    }
+
     Box(modifier.fillMaxWidth()) {
         TextButton(
             onClick = { onExpandedChange(true) },
@@ -507,21 +1025,44 @@ private fun ChapterSelector(
             )
             Icon(Icons.Default.ArrowDropDown, contentDescription = null)
         }
-        DropdownMenu(
-            expanded = expanded,
+    }
+    if (expanded) {
+        ModalBottomSheet(
             onDismissRequest = { onExpandedChange(false) },
+            sheetState = sheetState,
         ) {
-            chapters.forEach { chapter ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = chapter.title,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    },
-                    onClick = { onChapterSelected(chapter) },
-                )
+            Text(
+                text = stringResource(R.string.chapters),
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
+                contentPadding = PaddingValues(bottom = 24.dp),
+            ) {
+                items(chapters) { chapter ->
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                text = chapter.title,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        trailingContent = {
+                            if (chapter == currentChapter) {
+                                Icon(Icons.Default.Check, contentDescription = null)
+                            }
+                        },
+                        colors = ListItemDefaults.colors(
+                            containerColor = Color.Transparent,
+                        ),
+                        modifier = Modifier.clickable {
+                            onChapterSelected(chapter)
+                        },
+                    )
+                }
             }
         }
     }

@@ -48,5 +48,6 @@ dependencies {
     implementation(libs.pdfbox.android) {
         exclude(group = "org.bouncycastle", module = "bcpkix-jdk15to18")
     }
+    testImplementation(libs.junit)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
