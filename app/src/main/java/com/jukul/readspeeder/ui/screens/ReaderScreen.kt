@@ -3,6 +3,7 @@ package com.jukul.readspeeder.ui.screens
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.os.Trace
 import android.view.WindowManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -43,6 +44,7 @@ import androidx.compose.material.icons.rounded.FastRewind
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -63,6 +65,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -96,6 +99,8 @@ import androidx.compose.ui.unit.sp
 import com.jukul.readspeeder.R
 import com.jukul.readspeeder.data.AppSettings
 import com.jukul.readspeeder.data.DocumentChapter
+import com.jukul.readspeeder.data.formatHtmlBlocks
+import com.jukul.readspeeder.data.formatPlainTextBlocks
 import com.jukul.readspeeder.data.MaxWpm
 import com.jukul.readspeeder.data.MinWpm
 import com.jukul.readspeeder.data.ReadDocument
@@ -109,7 +114,9 @@ import dev.chrisbanes.haze.blur.blurEffect
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -125,40 +132,83 @@ internal fun ReaderScreen(
     onProgressChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    val readerText = remember(
-        document.id,
-        document.text,
-        settings.splitHyphenatedWords,
-    ) {
-        parseReaderText(document.text, settings.splitHyphenatedWords)
-    }
-    val words = readerText.words
-    val sentences = readerText.sentences
-    val previewSegments = readerText.previewSegments
-    val wordFrequencies = remember(document.id, words) {
-        words.asSequence()
-            .map(String::normalizedWord)
-            .filter(String::isNotEmpty)
-            .groupingBy { it }
-            .eachCount()
-    }
-    val standardBlocks = remember(document.id, document.text, document.formattedText) {
-        document.formattedText.ifEmpty {
-            document.text.lineSequence()
-                .chunked(50) { AnnotatedString(it.joinToString("\n")) }
-                .toList()
-        }
-    }
-    val blockWordStarts = remember(standardBlocks, settings.splitHyphenatedWords) {
-        buildList {
-            var wordCount = 0
-            standardBlocks.forEach {
-                add(wordCount)
-                wordCount += it.text.wordCount(settings.splitHyphenatedWords)
+    val prepared by produceState<PreparedReader?>(null, document.id, document.text, settings.splitHyphenatedWords) {
+        value = withContext(Dispatchers.Default) {
+            traced("RSVP preparation") {
+                val readerText = parseReaderText(document.text, settings.splitHyphenatedWords)
+                val frequencies = buildMap {
+                    readerText.words.groupingBy { it }.eachCount().forEach { (word, count) ->
+                        val normalized = word.normalizedWord()
+                        if (normalized.isNotEmpty()) {
+                            put(normalized, getOrElse(normalized) { 0 } + count)
+                        }
+                    }
+                }
+                PreparedReader(
+                    readerText = readerText,
+                    wordFrequencies = frequencies,
+                    chapterFlashStarts = document.chapters.map {
+                        readerText.flashIndex(it.startWord)
+                    },
+                )
             }
         }
     }
+    val reader = prepared
+    if (reader == null) {
+        Box(
+            modifier = modifier.fillMaxSize().hazeSource(hazeState).padding(top = topPadding),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+    PreparedReaderScreen(
+        document = document,
+        settings = settings,
+        onSettingsChange = onSettingsChange,
+        hazeState = hazeState,
+        backgroundColor = backgroundColor,
+        topPadding = topPadding,
+        holdPaused = holdPaused,
+        onProgressChange = onProgressChange,
+        prepared = reader,
+        modifier = modifier,
+    )
+}
+
+private data class PreparedReader(
+    val readerText: ReaderText,
+    val wordFrequencies: Map<String, Int>,
+    val chapterFlashStarts: List<Int>,
+)
+
+private data class PreparedStandard(
+    val blocks: List<AnnotatedString>,
+    val blockWordStarts: List<Int>,
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PreparedReaderScreen(
+    document: ReadDocument,
+    settings: AppSettings,
+    onSettingsChange: (AppSettings) -> Unit,
+    hazeState: HazeState,
+    backgroundColor: Color,
+    topPadding: Dp,
+    holdPaused: Boolean,
+    onProgressChange: (Int) -> Unit,
+    prepared: PreparedReader,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val readerText = prepared.readerText
+    val words = readerText.words
+    val sentences = readerText.sentences
+    val previewSegments = readerText.previewSegments
+    val wordFrequencies = prepared.wordFrequencies
     val standardListState = rememberLazyListState()
     var wordIndex by remember(document.id, words.size) {
         val lastIndex = words.lastIndex.coerceAtLeast(0)
@@ -168,22 +218,48 @@ internal fun ReaderScreen(
     var standardMode by remember(document.id) {
         mutableStateOf(settings.defaultReader == ReaderMode.Standard)
     }
+    var preparedStandard by remember(
+        document.id,
+        document.text,
+        document.formattedHtml,
+        settings.splitHyphenatedWords,
+    ) {
+        mutableStateOf<PreparedStandard?>(null)
+    }
     var wpm by remember(document.id) { mutableIntStateOf(settings.defaultWpm) }
     var chapterMenuExpanded by remember(document.id) { mutableStateOf(false) }
     var countdown by remember(document.id) { mutableIntStateOf(0) }
     var controlsVisible by remember(document.id) { mutableStateOf(true) }
-    val sentenceIndex = sentences.binarySearchBy(wordIndex) { it.firstWord }.let {
-        if (it >= 0) it else (-it - 2).coerceAtLeast(0)
-    }
-    val previewSegmentIndex = previewSegments.binarySearchBy(wordIndex) { it.firstWord }.let {
-        if (it >= 0) it else (-it - 2).coerceAtLeast(0)
-    }
     val progressDescription = stringResource(R.string.reading_progress)
     val progressSliderColors = SliderDefaults.colors(
         thumbColor = MaterialTheme.colorScheme.tertiary,
         activeTrackColor = MaterialTheme.colorScheme.tertiary,
         inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
     )
+    LaunchedEffect(standardMode, preparedStandard) {
+        if (!standardMode || preparedStandard != null) return@LaunchedEffect
+        preparedStandard = withContext(Dispatchers.Default) {
+            traced("standard formatting") {
+                val blocks = if (document.formattedHtml.isNotEmpty()) {
+                    formatHtmlBlocks(document.formattedHtml)
+                } else {
+                    formatPlainTextBlocks(document.text)
+                }
+                PreparedStandard(
+                    blocks = blocks,
+                    blockWordStarts = buildList {
+                        var wordCount = 0
+                        blocks.forEach { block ->
+                            add(wordCount)
+                            wordCount += block.text.wordCount(settings.splitHyphenatedWords)
+                        }
+                    },
+                )
+            }
+        }
+    }
+    val standardBlocks = preparedStandard?.blocks.orEmpty()
+    val blockWordStarts = preparedStandard?.blockWordStarts.orEmpty()
 
     DisposableEffect(document.id, settings.keepScreenAwake) {
         val activity = context.findActivity()
@@ -231,12 +307,12 @@ internal fun ReaderScreen(
         playing,
         holdPaused,
         wpm,
-        wordIndex,
         words.size,
         settings.smartPauses,
         settings.complexWordPauses,
     ) {
-        if (playing && !holdPaused && words.isNotEmpty()) {
+        while (playing && !holdPaused && words.isNotEmpty()) {
+            val currentIndex = wordIndex
             val word = words[wordIndex]
             delay(
                 wordDelayMillis(
@@ -248,6 +324,7 @@ internal fun ReaderScreen(
                     totalWords = words.size,
                 ),
             )
+            if (!playing || holdPaused || wordIndex != currentIndex) continue
             if (wordIndex < words.lastIndex) {
                 wordIndex++
             } else {
@@ -255,10 +332,10 @@ internal fun ReaderScreen(
             }
         }
     }
-    LaunchedEffect(wordIndex, words.lastIndex) {
-        onProgressChange(
-            (wordIndex * 100f / maxOf(1, words.lastIndex)).roundToInt(),
-        )
+    LaunchedEffect(words.lastIndex) {
+        snapshotFlow {
+            (wordIndex * 100f / maxOf(1, words.lastIndex)).roundToInt()
+        }.distinctUntilChanged().collect(onProgressChange)
     }
     LaunchedEffect(standardMode, standardBlocks) {
         if (!standardMode || standardBlocks.isEmpty()) return@LaunchedEffect
@@ -393,7 +470,14 @@ internal fun ReaderScreen(
                     ReadingAlignment.Justified -> TextAlign.Justify
                 },
             )
-            SelectionContainer {
+            if (preparedStandard == null) {
+                Box(
+                    Modifier.fillMaxSize().hazeSource(hazeState),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else SelectionContainer {
                 LazyColumn(
                     state = standardListState,
                     modifier = Modifier
@@ -415,6 +499,13 @@ internal fun ReaderScreen(
                 }
             }
         } else {
+            val sentenceIndex = sentences.binarySearchBy(wordIndex) { it.firstWord }.let {
+                if (it >= 0) it else (-it - 2).coerceAtLeast(0)
+            }
+            val previewSegmentIndex =
+                previewSegments.binarySearchBy(wordIndex) { it.firstWord }.let {
+                    if (it >= 0) it else (-it - 2).coerceAtLeast(0)
+                }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -438,6 +529,7 @@ internal fun ReaderScreen(
                             sentence = previewSegments.getOrNull(previewSegmentIndex),
                             words = words,
                             wordIndex = wordIndex,
+                            wpm = wpm,
                             visible = settings.sentencePreview && countdown == 0,
                         )
                         val displayedWord = if (countdown > 0) countdown.toString() else word
@@ -507,13 +599,10 @@ internal fun ReaderScreen(
                         }
                     }
                     if (document.chapters.isNotEmpty()) {
+                        val chapterIndex = prepared.chapterFlashStarts.indexAt(wordIndex)
                         ChapterSelector(
                             chapters = document.chapters,
-                            currentChapter = document.chapters
-                                .lastOrNull {
-                                    readerText.flashIndex(it.startWord) <= wordIndex
-                                }
-                                ?: document.chapters.first(),
+                            currentChapter = document.chapters[chapterIndex],
                             expanded = chapterMenuExpanded,
                             onExpandedChange = { chapterMenuExpanded = it },
                             onChapterSelected = {
@@ -672,6 +761,7 @@ private fun SentencePreview(
     sentence: ReaderSegment?,
     words: List<String>,
     wordIndex: Int,
+    wpm: Int,
     visible: Boolean,
 ) {
     val scrollState = rememberScrollState()
@@ -685,15 +775,14 @@ private fun SentencePreview(
         if (sentence == null || wordIndex !in sentence.firstWord..sentence.lastWord) {
             IntRange.EMPTY
         } else {
-            val start = (sentence.firstWord until wordIndex)
-                .sumOf { words[it].length + 1 }
+            val start = sentence.wordCharacterStarts[wordIndex - sentence.firstWord]
             start until start + words[wordIndex].length
         }
     }
 
     LaunchedEffect(wordIndex) {
         highlight.snapTo(0.55f)
-        highlight.animateTo(1f, tween(120))
+        highlight.animateTo(1f, tween((45_000 / wpm).coerceIn(40, 120)))
     }
     LaunchedEffect(sentence) {
         firstVisibleLine = 0
@@ -812,44 +901,56 @@ internal data class ReaderSegment(
     val text: String,
     val firstWord: Int,
     val lastWord: Int,
+    val wordCharacterStarts: IntArray,
 )
 
 internal fun parseReaderText(text: String, splitHyphenatedWords: Boolean): ReaderText {
-    val sourceWords = buildList {
-        var start = 0
-        while (start < text.length) {
-            while (start < text.length && text[start].isWhitespace()) start++
-            if (start == text.length) break
-            var end = start + 1
-            while (end < text.length && !text[end].isWhitespace()) end++
-            add(start until end)
-            start = end
-        }
-    }
-    if (sourceWords.isEmpty()) {
+    val sourceWordCount = text.sourceWordCount()
+    if (sourceWordCount == 0) {
         return ReaderText(emptyList(), emptyList(), emptyList(), IntArray(0))
     }
 
-    val words = mutableListOf<String>()
-    val paragraphEnds = mutableListOf<Boolean>()
-    val sourceWordStarts = IntArray(sourceWords.size + 1)
-    sourceWords.forEachIndexed { index, range ->
-        sourceWordStarts[index] = words.size
-        text.substring(range).flashWords(splitHyphenatedWords).forEach {
+    val words = ArrayList<String>(sourceWordCount)
+    val paragraphEnds = ArrayList<Boolean>(sourceWordCount)
+    val sourceWordStarts = IntArray(sourceWordCount + 1)
+    var sourceWord = 0
+    var start = 0
+    while (start < text.length) {
+        while (start < text.length && text[start].isWhitespace()) start++
+        if (start == text.length) break
+        var end = start + 1
+        while (end < text.length && !text[end].isWhitespace()) end++
+        sourceWordStarts[sourceWord++] = words.size
+        text.substring(start, end).flashWords(splitHyphenatedWords).forEach {
             words += it
             paragraphEnds += false
         }
-        val nextStart = sourceWords.getOrNull(index + 1)?.first ?: text.length
-        paragraphEnds[paragraphEnds.lastIndex] =
-            text.hasParagraphBreak(range.last + 1, nextStart)
+        var newlines = 0
+        while (end < text.length && text[end].isWhitespace()) {
+            if (text[end++] == '\n') newlines++
+        }
+        paragraphEnds[paragraphEnds.lastIndex] = newlines >= 2
+        start = end
     }
-    sourceWordStarts[sourceWords.size] = words.size
+    sourceWordStarts[sourceWordCount] = words.size
     return ReaderText(
         words = words,
         sentences = words.segments(paragraphEnds, includeClauses = false),
         previewSegments = words.segments(paragraphEnds, includeClauses = true),
         sourceWordStarts = sourceWordStarts,
     )
+}
+
+private fun String.sourceWordCount(): Int {
+    var count = 0
+    var index = 0
+    while (index < length) {
+        while (index < length && this[index].isWhitespace()) index++
+        if (index == length) break
+        count++
+        while (index < length && !this[index].isWhitespace()) index++
+    }
+    return count
 }
 
 private fun List<String>.segments(
@@ -863,12 +964,19 @@ private fun List<String>.segments(
             word.endsSegment(includeClauses) ||
             paragraphEnds[index]
         ) {
+            val segmentWords = this@segments.subList(firstWord, index + 1)
             add(
                 ReaderSegment(
-                    text = this@segments.subList(firstWord, index + 1)
-                        .joinToString(" "),
+                    text = segmentWords.joinToString(" "),
                     firstWord = firstWord,
                     lastWord = index,
+                    wordCharacterStarts = IntArray(segmentWords.size).also { starts ->
+                        var character = 0
+                        segmentWords.forEachIndexed { wordIndex, segmentWord ->
+                            starts[wordIndex] = character
+                            character += segmentWord.length + 1
+                        }
+                    },
                 ),
             )
             firstWord = index + 1
@@ -909,14 +1017,6 @@ private fun String.flashWords(splitHyphenatedWords: Boolean): List<String> {
 private fun Char.isWordHyphen(): Boolean =
     Character.getType(this) == Character.DASH_PUNCTUATION.toInt() ||
         this == '\u00AD' || this == '\u2212'
-
-private fun String.hasParagraphBreak(start: Int, end: Int): Boolean {
-    var newlines = 0
-    for (index in start until end) {
-        if (this[index] == '\n' && ++newlines == 2) return true
-    }
-    return false
-}
 
 private fun String.normalizedWord(): String =
     lowercase().filter(Char::isLetter)
@@ -992,6 +1092,15 @@ private fun Int.isCombiningMark(): Boolean = when (Character.getType(this)) {
     -> true
 
     else -> false
+}
+
+private inline fun <T> traced(name: String, block: () -> T): T {
+    Trace.beginSection(name)
+    return try {
+        block()
+    } finally {
+        Trace.endSection()
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

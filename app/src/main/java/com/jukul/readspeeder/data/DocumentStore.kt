@@ -1,18 +1,21 @@
 package com.jukul.readspeeder.data
 
 import android.content.Context
+import androidx.core.content.edit
 import org.json.JSONArray
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
 import java.security.MessageDigest
 
 internal data class LibraryStorage(val documentCount: Int, val bytes: Long)
 
 internal data class RestoredLibrary(
-    val documents: List<ReadDocument>,
+    val documents: List<LibraryDocument>,
     val failedCount: Int,
 )
 
@@ -21,15 +24,14 @@ internal class DocumentStore(context: Context) {
     private val preferences =
         context.getSharedPreferences("readspeeder_documents", Context.MODE_PRIVATE)
 
-    fun loadAll(): RestoredLibrary {
+    fun loadSummaries(): RestoredLibrary {
         var failed = 0
         val documents = documentIds().mapNotNull { id ->
             try {
-                val stored = DocumentCodec.decode(file(id).readBytes())
+                val stored = file(id).inputStream().buffered().use(DocumentCodec::decodeSummary)
                 stored.copy(
                     progress = preferences.getInt(progressKey(id), stored.progress)
                         .coerceIn(0, 100),
-                    formattedText = formatHtmlBlocks(stored.formattedHtml),
                 )
             } catch (_: Exception) {
                 failed++
@@ -39,12 +41,19 @@ internal class DocumentStore(context: Context) {
         return RestoredLibrary(documents, failed)
     }
 
+    fun load(id: String): ReadDocument {
+        val stored = file(id).inputStream().buffered().use(DocumentCodec::decode)
+        return stored.copy(
+            progress = preferences.getInt(progressKey(id), stored.progress).coerceIn(0, 100),
+        )
+    }
+
     fun save(document: ReadDocument, makeRecent: Boolean = true) {
         root.mkdirs()
         val target = file(document.id)
         val temporary = File(root, "${target.name}.tmp")
         val backup = File(root, "${target.name}.bak")
-        temporary.writeBytes(DocumentCodec.encode(document))
+        temporary.outputStream().buffered().use { DocumentCodec.encode(document, it) }
         backup.delete()
         if (target.exists() && !target.renameTo(backup)) {
             temporary.delete()
@@ -61,36 +70,34 @@ internal class DocumentStore(context: Context) {
                 add(0, document.id)
             }
         }
-        preferences.edit()
-            .putString(IndexKey, JSONArray(ids).toString())
-            .putInt(progressKey(document.id), document.progress)
-            .apply()
+        preferences.edit {
+            putString(IndexKey, JSONArray(ids).toString())
+            putInt(progressKey(document.id), document.progress)
+        }
     }
 
     fun updateProgress(id: String, progress: Int) {
-        preferences.edit().putInt(progressKey(id), progress.coerceIn(0, 100)).apply()
+        preferences.edit { putInt(progressKey(id), progress.coerceIn(0, 100)) }
     }
 
     fun delete(id: String) {
         val target = file(id)
         check(target.parentFile?.canonicalFile == root.canonicalFile)
         if (target.exists() && !target.delete()) error("Unable to delete document")
-        preferences.edit()
-            .putString(
+        preferences.edit {
+            putString(
                 IndexKey,
                 JSONArray(documentIds().filterNot { it == id }).toString(),
             )
-            .remove(progressKey(id))
-            .apply {
-                if (activeDocumentId() == id) remove(ActiveDocumentKey)
-            }
-            .apply()
+            remove(progressKey(id))
+            if (activeDocumentId() == id) remove(ActiveDocumentKey)
+        }
     }
 
     fun activeDocumentId(): String? = preferences.getString(ActiveDocumentKey, null)
 
     fun setActiveDocument(id: String?) {
-        preferences.edit().apply {
+        preferences.edit {
             if (id == null) {
                 remove(ActiveDocumentKey)
             } else {
@@ -108,7 +115,7 @@ internal class DocumentStore(context: Context) {
                     )
                 }
             }
-        }.commit()
+        }
     }
 
     fun storage(): LibraryStorage = LibraryStorage(
@@ -119,7 +126,7 @@ internal class DocumentStore(context: Context) {
     fun clear() {
         check(root.canonicalFile == File(root.parentFile, DirectoryName).canonicalFile)
         if (root.exists() && !root.deleteRecursively()) error("Unable to clear library")
-        preferences.edit().clear().apply()
+        preferences.edit { clear() }
     }
 
     private fun documentIds(): List<String> = try {
@@ -148,8 +155,8 @@ internal object DocumentCodec {
     private const val MaxItems = 10_000
     private const val MaxCoverBytes = 20 * 1024 * 1024
 
-    fun encode(document: ReadDocument): ByteArray = ByteArrayOutputStream().use { bytes ->
-        DataOutputStream(bytes).use { output ->
+    fun encode(document: ReadDocument, stream: OutputStream) {
+        DataOutputStream(stream).use { output ->
             output.writeInt(Magic)
             output.writeInt(Version)
             output.writeString(document.id)
@@ -171,13 +178,17 @@ internal object DocumentCodec {
             }
             output.writeInt(document.progress.coerceIn(0, 100))
         }
-        bytes.toByteArray()
     }
 
-    fun decode(bytes: ByteArray): ReadDocument =
-        DataInputStream(ByteArrayInputStream(bytes)).use { input ->
-            require(input.readInt() == Magic) { "Invalid document cache" }
-            require(input.readInt() == Version) { "Unsupported document cache" }
+    fun encode(document: ReadDocument): ByteArray =
+        ByteArrayOutputStream().use { bytes ->
+            encode(document, bytes)
+            bytes.toByteArray()
+        }
+
+    fun decode(stream: InputStream): ReadDocument =
+        DataInputStream(stream).use { input ->
+            input.readHeader()
             val id = input.readString()
             val title = input.readString()
             val author = if (input.readBoolean()) input.readString() else null
@@ -196,7 +207,7 @@ internal object DocumentCodec {
                 null
             }
             val progress = input.readInt().coerceIn(0, 100)
-            require(input.available() == 0) { "Unexpected document cache data" }
+            require(input.read() == -1) { "Unexpected document cache data" }
             ReadDocument(
                 id = id,
                 title = title,
@@ -209,6 +220,41 @@ internal object DocumentCodec {
             )
         }
 
+    fun decode(bytes: ByteArray): ReadDocument =
+        ByteArrayInputStream(bytes).use(::decode)
+
+    fun decodeSummary(stream: InputStream): LibraryDocument =
+        DataInputStream(stream).use { input ->
+            input.readHeader()
+            val id = input.readString()
+            val title = input.readString()
+            val author = if (input.readBoolean()) input.readString() else null
+            input.skipString()
+            repeat(input.readCount()) { input.skipString() }
+            repeat(input.readCount()) {
+                input.skipString()
+                input.readInt()
+            }
+            val cover = if (input.readBoolean()) {
+                val size = input.readInt()
+                require(size in 0..MaxCoverBytes) { "Invalid cover cache" }
+                ByteArray(size).also(input::readFully)
+            } else {
+                null
+            }
+            val progress = input.readInt().coerceIn(0, 100)
+            require(input.read() == -1) { "Unexpected document cache data" }
+            LibraryDocument(id, title, author, cover, progress)
+        }
+
+    fun decodeSummary(bytes: ByteArray): LibraryDocument =
+        ByteArrayInputStream(bytes).use(::decodeSummary)
+
+    private fun DataInputStream.readHeader() {
+        require(readInt() == Magic) { "Invalid document cache" }
+        require(readInt() == Version) { "Unsupported document cache" }
+    }
+
     private fun DataOutputStream.writeString(value: String) {
         val bytes = value.toByteArray(Charsets.UTF_8)
         require(bytes.size <= MaxStringBytes) { "Document field is too large" }
@@ -220,6 +266,20 @@ internal object DocumentCodec {
         val size = readInt()
         require(size in 0..MaxStringBytes) { "Invalid document cache field" }
         return ByteArray(size).also(::readFully).toString(Charsets.UTF_8)
+    }
+
+    private fun DataInputStream.skipString() {
+        var remaining = readInt()
+        require(remaining in 0..MaxStringBytes) { "Invalid document cache field" }
+        while (remaining > 0) {
+            val skipped = skipBytes(remaining)
+            if (skipped == 0) {
+                if (read() == -1) error("Truncated document cache")
+                remaining--
+            } else {
+                remaining -= skipped
+            }
+        }
     }
 
     private fun DataInputStream.readCount(): Int =

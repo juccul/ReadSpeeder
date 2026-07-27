@@ -11,6 +11,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -112,14 +113,16 @@ internal fun ReadSpeederTheme(
     }
     val context = LocalContext.current
     val view = LocalView.current
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && darkTheme ->
-            dynamicDarkColorScheme(context)
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
-            dynamicLightColorScheme(context)
-        !dynamicColor -> MonochromeColorScheme
-        darkTheme -> darkColorScheme()
-        else -> lightColorScheme()
+    val colorScheme = remember(context, darkTheme, dynamicColor) {
+        when {
+            dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && darkTheme ->
+                dynamicDarkColorScheme(context)
+            dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+                dynamicLightColorScheme(context)
+            !dynamicColor -> MonochromeColorScheme
+            darkTheme -> darkColorScheme()
+            else -> lightColorScheme()
+        }
     }
 
     SideEffect {

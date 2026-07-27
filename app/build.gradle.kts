@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.baselineprofile)
     alias(libs.plugins.compose.compiler)
 }
 
@@ -23,9 +24,25 @@ android {
 
     buildTypes {
         release {
+            isMinifyEnabled = true
+            isShrinkResources = true
             optimization {
-                enable = false
+                enable = true
             }
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
+        create("benchmarkRelease") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
+        create("nonMinifiedRelease") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
         }
     }
     compileOptions {
@@ -34,6 +51,22 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        if (variant.name in setOf("benchmarkRelease", "nonMinifiedRelease")) {
+            variant.sources.kotlin?.addStaticSourceDirectory("src/profile/java")
+            variant.sources.manifests.addStaticManifestFile("src/profile/AndroidManifest.xml")
+        }
+    }
+}
+
+composeCompiler {
+    if (providers.gradleProperty("enableComposeCompilerReports").orNull == "true") {
+        reportsDestination = layout.buildDirectory.dir("compose-compiler/reports")
+        metricsDestination = layout.buildDirectory.dir("compose-compiler/metrics")
     }
 }
 
@@ -48,6 +81,8 @@ dependencies {
     implementation(libs.pdfbox.android) {
         exclude(group = "org.bouncycastle", module = "bcpkix-jdk15to18")
     }
+    implementation(libs.androidx.profileinstaller)
+    baselineProfile(project(":benchmark"))
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

@@ -65,12 +65,15 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
+import android.os.Trace
 import com.jukul.readspeeder.R
 import com.jukul.readspeeder.data.AppSettings
 import com.jukul.readspeeder.data.DocumentImporter
 import com.jukul.readspeeder.data.DocumentStore
 import com.jukul.readspeeder.data.LibraryStorage
+import com.jukul.readspeeder.data.LibraryDocument
 import com.jukul.readspeeder.data.ReadDocument
+import com.jukul.readspeeder.data.toLibraryDocument
 import com.jukul.readspeeder.ui.components.AddContentButton
 import com.jukul.readspeeder.ui.components.CollapsedTopBarHeight
 import com.jukul.readspeeder.ui.components.DocumentMenuOverlay
@@ -127,7 +130,8 @@ internal fun ReadSpeederApp(
     val snackbarHostState = remember { SnackbarHostState() }
     val libraryGridState = rememberLazyGridState()
     val documentStore = remember { DocumentStore(context.applicationContext) }
-    val documents = remember { mutableStateListOf<ReadDocument>() }
+    val documents = remember { mutableStateListOf<LibraryDocument>() }
+    var openedDocument by remember { mutableStateOf<ReadDocument?>(null) }
     var libraryLoading by remember { mutableStateOf(true) }
     var libraryStorage by remember { mutableStateOf(LibraryStorage(0, 0)) }
     var currentDestination by rememberSaveable { mutableStateOf(AppDestination.Library) }
@@ -168,7 +172,9 @@ internal fun ReadSpeederApp(
         currentDestination == AppDestination.Library &&
             openedDocumentId == null && !pastingText && librarySearchQuery != null
     LaunchedEffect(Unit) {
-        val restored = withContext(Dispatchers.IO) { documentStore.loadAll() }
+        val restored = withContext(Dispatchers.IO) {
+            traced("summary restoration") { documentStore.loadSummaries() }
+        }
         documents.addAll(restored.documents)
         if (openedDocumentId != null && restored.documents.none { it.id == openedDocumentId }) {
             documentStore.setActiveDocument(null)
@@ -182,6 +188,26 @@ internal fun ReadSpeederApp(
             )
         }
     }
+    LaunchedEffect(openedDocumentId) {
+        val id = openedDocumentId
+        if (id == null) {
+            openedDocument = null
+        } else {
+            openedDocument = null
+            try {
+                openedDocument = withContext(Dispatchers.IO) {
+                    traced("full document loading") { documentStore.load(id) }
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                documentStore.setActiveDocument(null)
+                openedDocumentId = null
+                snackbarHostState.showSnackbar(
+                    error.message ?: resources.getString(R.string.document_import_failed),
+                )
+            }
+        }
+    }
     val documentPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
@@ -193,7 +219,7 @@ internal fun ReadSpeederApp(
                             )
                         }
                         documents.removeAll { it.id == document.id }
-                        documents.add(0, document)
+                        documents.add(0, document.toLibraryDocument())
                         libraryStorage = withContext(Dispatchers.IO) {
                             documentStore.storage()
                         }
@@ -381,7 +407,7 @@ internal fun ReadSpeederApp(
                         }
                     (
                         slideInHorizontally { direction * it / 8 } + fadeIn()
-                    ).togetherWith(exit)
+                    ).togetherWith(exit).using(null)
                 },
                 label = "page",
             ) { state ->
@@ -396,7 +422,7 @@ internal fun ReadSpeederApp(
                     }
 
                 if (documentId != null) {
-                    val document = documents.firstOrNull { it.id == documentId }
+                    val document = openedDocument?.takeIf { it.id == documentId }
                     if (document != null) {
                         ReaderScreen(
                             document = document,
@@ -410,13 +436,14 @@ internal fun ReadSpeederApp(
                                 val index = documents.indexOfFirst { it.id == document.id }
                                 if (index >= 0 && documents[index].progress != progress) {
                                     documents[index] = documents[index].copy(progress = progress)
+                                    openedDocument = document.copy(progress = progress)
                                     scope.launch(Dispatchers.IO) {
                                         documentStore.updateProgress(document.id, progress)
                                     }
                                 }
                             },
                         )
-                    } else if (libraryLoading) {
+                    } else {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
                         }
@@ -435,7 +462,7 @@ internal fun ReadSpeederApp(
                                     withContext(Dispatchers.IO) {
                                         documentStore.save(document)
                                     }
-                                    documents.add(0, document)
+                                    documents.add(0, document.toLibraryDocument())
                                     libraryStorage = withContext(Dispatchers.IO) {
                                         documentStore.storage()
                                     }
@@ -713,7 +740,7 @@ internal fun ReadSpeederApp(
                                 editDocumentValue.isNotBlank(),
                         onClick = {
                             val value = editDocumentValue.trim()
-                            val updated = when (editField) {
+                            val updatedSummary = when (editField) {
                                 DocumentEditField.Title ->
                                     documentBeingEdited.copy(title = value)
                                 DocumentEditField.Author ->
@@ -723,11 +750,27 @@ internal fun ReadSpeederApp(
                             scope.launch {
                                 try {
                                     withContext(Dispatchers.IO) {
+                                        val stored = documentStore.load(documentBeingEdited.id)
+                                        val updated = when (editField) {
+                                            DocumentEditField.Title -> stored.copy(title = value)
+                                            DocumentEditField.Author ->
+                                                stored.copy(author = value.ifEmpty { null })
+                                        }
                                         documentStore.save(updated, makeRecent = false)
                                     }
                                     val index =
-                                        documents.indexOfFirst { it.id == updated.id }
-                                    if (index >= 0) documents[index] = updated
+                                        documents.indexOfFirst { it.id == updatedSummary.id }
+                                    if (index >= 0) documents[index] = updatedSummary
+                                    if (openedDocument?.id == updatedSummary.id) {
+                                        openedDocument = when (editField) {
+                                            DocumentEditField.Title ->
+                                                openedDocument?.copy(title = value)
+                                            DocumentEditField.Author ->
+                                                openedDocument?.copy(
+                                                    author = value.ifEmpty { null },
+                                                )
+                                        }
+                                    }
                                     libraryStorage = withContext(Dispatchers.IO) {
                                         documentStore.storage()
                                     }
@@ -809,4 +852,13 @@ internal fun ReadSpeederApp(
 @Composable
 private fun ReadSpeederAppPreview() = ReadSpeederTheme {
     ReadSpeederApp(AppSettings(), {})
+}
+
+private inline fun <T> traced(name: String, block: () -> T): T {
+    Trace.beginSection(name)
+    return try {
+        block()
+    } finally {
+        Trace.endSection()
+    }
 }

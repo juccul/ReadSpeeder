@@ -7,24 +7,31 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import com.jukul.readspeeder.data.LibrarySort
-import com.jukul.readspeeder.data.ReadDocument
+import com.jukul.readspeeder.data.LibraryDocument
 import com.jukul.readspeeder.ui.components.DocumentCard
 
 @Composable
 internal fun LibraryScreen(
     state: LazyGridState,
     contentPadding: PaddingValues,
-    documents: List<ReadDocument>,
+    documents: List<LibraryDocument>,
     searchQuery: String,
     sort: LibrarySort,
-    onDocumentClick: (ReadDocument) -> Unit,
-    onDocumentLongClick: (ReadDocument, Offset) -> Unit,
+    onDocumentClick: (LibraryDocument) -> Unit,
+    onDocumentLongClick: (LibraryDocument, Offset) -> Unit,
     modifier: Modifier = Modifier,
-) = LazyVerticalGrid(
+) {
+    val visibleDocuments by remember(documents, searchQuery, sort) {
+        derivedStateOf { filterAndSortDocuments(documents, searchQuery, sort) }
+    }
+    LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         state = state,
         modifier = modifier,
@@ -32,9 +39,7 @@ internal fun LibraryScreen(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(
-            items = filterAndSortDocuments(documents, searchQuery, sort),
-        ) { document ->
+        items(visibleDocuments) { document ->
             DocumentCard(
                 title = document.title,
                 author = document.author,
@@ -45,12 +50,13 @@ internal fun LibraryScreen(
             )
         }
     }
+}
 
 internal fun filterAndSortDocuments(
-    documents: List<ReadDocument>,
+    documents: List<LibraryDocument>,
     query: String,
     sort: LibrarySort,
-): List<ReadDocument> {
+): List<LibraryDocument> {
     val matches = if (query.isBlank()) {
         documents
     } else {
@@ -59,9 +65,9 @@ internal fun filterAndSortDocuments(
                 it.author?.contains(query, ignoreCase = true) == true
         }
     }
-    val titleOrder = compareBy<ReadDocument, String>(
+    val titleOrder = compareBy<LibraryDocument, String>(
         String.CASE_INSENSITIVE_ORDER,
-        ReadDocument::title,
+        LibraryDocument::title,
     )
     return when (sort) {
         LibrarySort.RecentlyRead -> matches

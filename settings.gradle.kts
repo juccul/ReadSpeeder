@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "ReadSpeeder"
 include(":app")
+include(":benchmark")

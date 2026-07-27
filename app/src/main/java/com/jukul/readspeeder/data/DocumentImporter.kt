@@ -25,6 +25,7 @@ private const val MaxExtractedCharacters = 5_000_000
 private const val MaxCoverDimension = 1_024
 private const val CoverQuality = 85
 private const val FormattedBlockLines = 50
+private const val FormattedBlockCharacters = 2_048
 private val ChapterHeadingPattern = Regex(
     """<h[1-3]\b[^>]*>.*?</h[1-3]>""",
     setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
@@ -40,13 +41,11 @@ private val ChapterTitlePrefix = Regex(
 private data class ImportedChapter(
     val title: String,
     val text: String,
-    val formattedText: List<AnnotatedString> = emptyList(),
     val formattedHtml: String? = null,
 )
 
 private data class ImportedContent(
     val text: String,
-    val formattedText: List<AnnotatedString> = emptyList(),
     val formattedHtml: List<String> = emptyList(),
     val title: String? = null,
     val author: String? = null,
@@ -104,7 +103,6 @@ internal object DocumentImporter {
             title = content.title ?: name.substringBeforeLast('.').ifBlank { name },
             author = content.author,
             text = normalizedText,
-            formattedText = content.formattedText,
             formattedHtml = content.formattedHtml,
             cover = content.cover,
             chapters = content.chapterMarkers.ifEmpty { fallbackChapters },
@@ -247,15 +245,13 @@ private fun extractEpub(stream: InputStream): ImportedContent {
                 "$currentPart · $heading"
             else -> headings.joinToString(" · ")
         }
-        val formattedText = formatHtmlBlocks(listOf(body))
-        ImportedChapter(chapterTitle, text, formattedText, body)
+        ImportedChapter(chapterTitle, text, body)
     }
     val cover = (coverPath ?: coverId?.let(images::get))
         ?.let(entries::get)
         ?.toThumbnail()
     return ImportedContent(
         text = chapters.joinToString("\n\n", transform = ImportedChapter::text),
-        formattedText = chapters.flatMap(ImportedChapter::formattedText),
         formattedHtml = chapters.mapNotNull(ImportedChapter::formattedHtml),
         title = title,
         author = author,
@@ -317,15 +313,22 @@ internal fun formatHtmlBlocks(html: List<String>): List<AnnotatedString> =
         buildAnnotatedString {
             append(AnnotatedString.fromHtml(body))
             append("\n")
-        }.chunkedLines()
+        }.chunkedBlocks()
     }
 
-private fun AnnotatedString.chunkedLines(): List<AnnotatedString> = buildList {
+internal fun formatPlainTextBlocks(text: String): List<AnnotatedString> =
+    AnnotatedString(text).chunkedBlocks()
+
+private fun AnnotatedString.chunkedBlocks(): List<AnnotatedString> = buildList {
     var start = 0
     var lines = 0
     text.forEachIndexed { index, character ->
-        if (character == '\n' && ++lines == FormattedBlockLines) {
-            add(subSequence(start, index))
+        if (character == '\n') lines++
+        if (
+            character.isWhitespace() &&
+            (lines >= FormattedBlockLines || index - start + 1 >= FormattedBlockCharacters)
+        ) {
+            add(subSequence(start, index + 1))
             start = index + 1
             lines = 0
         }

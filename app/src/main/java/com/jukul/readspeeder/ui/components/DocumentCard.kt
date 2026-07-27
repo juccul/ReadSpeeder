@@ -17,11 +17,13 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -33,6 +35,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jukul.readspeeder.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+private class CardPointerState {
+    var coordinates: LayoutCoordinates? = null
+    var pressPosition = Offset.Zero
+}
 
 @Composable
 internal fun DocumentCard(
@@ -45,43 +54,47 @@ internal fun DocumentCard(
     modifier: Modifier = Modifier,
 ) {
     val optionsLabel = stringResource(R.string.document_options)
-    val coordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
-    val pressPosition = remember { mutableStateOf(Offset.Zero) }
+    val pointerState = remember { CardPointerState() }
+    val coverImage by produceState<ImageBitmap?>(initialValue = null, cover) {
+        value = withContext(Dispatchers.Default) {
+            cover?.let {
+                BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap()
+            }
+        }
+    }
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        val coverImage = remember(cover) {
-            cover?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
-        }
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
-                .onGloballyPositioned { coordinates.value = it }
+                .onGloballyPositioned { pointerState.coordinates = it }
                 .pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown(
                             requireUnconsumed = false,
                             pass = PointerEventPass.Initial,
                         )
-                        pressPosition.value =
-                            coordinates.value?.localToRoot(down.position) ?: down.position
+                        pointerState.pressPosition =
+                            pointerState.coordinates?.localToRoot(down.position) ?: down.position
                     }
                 }
                 .combinedClickable(
                     onClick = onClick,
                     onLongClickLabel = optionsLabel,
-                    onLongClick = { onLongClick(pressPosition.value) },
+                    onLongClick = { onLongClick(pointerState.pressPosition) },
                 ),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
             ),
         ) {
             Box(Modifier.fillMaxSize()) {
-                if (coverImage != null) {
+                val image = coverImage
+                if (image != null) {
                     Image(
-                        bitmap = coverImage,
+                        bitmap = image,
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,

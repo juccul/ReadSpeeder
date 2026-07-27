@@ -1,6 +1,7 @@
 package com.jukul.readspeeder.data
 
 import android.content.Context
+import androidx.core.content.edit
 
 internal class SettingsStore(context: Context) {
     private val preferences =
@@ -29,26 +30,26 @@ internal class SettingsStore(context: Context) {
 
     fun save(settings: AppSettings) {
         val value = settings.validated()
-        preferences.edit()
-            .putString("theme_mode", value.themeMode.name)
-            .putBoolean("dynamic_color", value.dynamicColor)
-            .putString("default_reader", value.defaultReader.name)
-            .putBoolean("keep_screen_awake", value.keepScreenAwake)
-            .putInt("default_wpm", value.defaultWpm)
-            .putBoolean("smart_pauses", value.smartPauses)
-            .putBoolean("complex_word_pauses", value.complexWordPauses)
-            .putBoolean("split_hyphenated_words", value.splitHyphenatedWords)
-            .putBoolean("playback_countdown", value.playbackCountdown)
-            .putBoolean("sentence_preview", value.sentencePreview)
-            .putBoolean("focus_guides", value.focusGuides)
-            .putBoolean("auto_hide_controls", value.autoHideControls)
-            .putString("reading_font", value.readingFont.name)
-            .putInt("text_size", value.textSize)
-            .putFloat("line_spacing", value.lineSpacing)
-            .putInt("horizontal_margin", value.horizontalMargin)
-            .putString("alignment", value.alignment.name)
-            .putString("library_sort", value.librarySort.name)
-            .apply()
+        preferences.edit {
+            putString("theme_mode", value.themeMode.name)
+            putBoolean("dynamic_color", value.dynamicColor)
+            putString("default_reader", value.defaultReader.name)
+            putBoolean("keep_screen_awake", value.keepScreenAwake)
+            putInt("default_wpm", value.defaultWpm)
+            putBoolean("smart_pauses", value.smartPauses)
+            putBoolean("complex_word_pauses", value.complexWordPauses)
+            putBoolean("split_hyphenated_words", value.splitHyphenatedWords)
+            putBoolean("playback_countdown", value.playbackCountdown)
+            putBoolean("sentence_preview", value.sentencePreview)
+            putBoolean("focus_guides", value.focusGuides)
+            putBoolean("auto_hide_controls", value.autoHideControls)
+            putString("reading_font", value.readingFont.name)
+            putInt("text_size", value.textSize)
+            putFloat("line_spacing", value.lineSpacing)
+            putInt("horizontal_margin", value.horizontalMargin)
+            putString("alignment", value.alignment.name)
+            putString("library_sort", value.librarySort.name)
+        }
     }
 }
 

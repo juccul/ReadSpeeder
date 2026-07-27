@@ -4,6 +4,7 @@ import com.jukul.readspeeder.ui.screens.filterAndSortDocuments
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PersistenceTest {
@@ -37,9 +38,12 @@ class PersistenceTest {
         )
 
         val restored = DocumentCodec.decode(DocumentCodec.encode(document))
+        val summary = DocumentCodec.decodeSummary(DocumentCodec.encode(document))
 
         assertEquals(document.copy(cover = null), restored.copy(cover = null))
         assertArrayEquals(document.cover, restored.cover)
+        assertEquals(document.toLibraryDocument().copy(cover = null), summary.copy(cover = null))
+        assertArrayEquals(document.cover, summary.cover)
     }
 
     @Test
@@ -56,25 +60,25 @@ class PersistenceTest {
     @Test
     fun librarySearchAndSortingUseTitlesAndAuthors() {
         val documents = listOf(
-            ReadDocument("1", "Zulu", null, ""),
-            ReadDocument("2", "alpha", "George Orwell", ""),
-            ReadDocument("3", "Beta", null, ""),
+            LibraryDocument("1", "Zulu", null),
+            LibraryDocument("2", "alpha", "George Orwell"),
+            LibraryDocument("3", "Beta", null),
         )
 
         assertEquals(
             listOf("2", "3", "1"),
             filterAndSortDocuments(documents, "", LibrarySort.TitleAscending)
-                .map(ReadDocument::id),
+                .map(LibraryDocument::id),
         )
         assertEquals(
             listOf("1", "3", "2"),
             filterAndSortDocuments(documents, "", LibrarySort.TitleDescending)
-                .map(ReadDocument::id),
+                .map(LibraryDocument::id),
         )
         assertEquals(
             listOf("2"),
             filterAndSortDocuments(documents, "orwell", LibrarySort.RecentlyRead)
-                .map(ReadDocument::id),
+                .map(LibraryDocument::id),
         )
     }
 
@@ -85,5 +89,15 @@ class PersistenceTest {
             cleanEpubChapterTitle("I hope Mr. Bingley will like it. CHAPTER II."),
         )
         assertEquals("Chapter XXVII.", cleanEpubChapterTitle("CHAPTERXXVII."))
+    }
+
+    @Test
+    fun longParagraphsAreSplitIntoLazyReaderBlocks() {
+        val text = "word ".repeat(2_000)
+        val blocks = formatPlainTextBlocks(text)
+
+        assertTrue(blocks.size > 1)
+        assertTrue(blocks.all { it.length <= 2_052 })
+        assertEquals(text, blocks.joinToString("") { it.text })
     }
 }
