@@ -67,6 +67,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -108,6 +109,9 @@ import com.jukul.readspeeder.data.ReaderMode
 import com.jukul.readspeeder.data.ReadingAlignment
 import com.jukul.readspeeder.data.ReadingFont
 import com.jukul.readspeeder.data.WpmStep
+import com.jukul.readspeeder.data.progressPercent
+import com.jukul.readspeeder.data.progressPosition
+import com.jukul.readspeeder.data.wordIndexAtProgress
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeProgressive
 import dev.chrisbanes.haze.blur.blurEffect
@@ -116,6 +120,7 @@ import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
@@ -212,8 +217,9 @@ private fun PreparedReaderScreen(
     val standardListState = rememberLazyListState()
     var wordIndex by remember(document.id, words.size) {
         val lastIndex = words.lastIndex.coerceAtLeast(0)
-        mutableIntStateOf((lastIndex * document.progress / 100f).roundToInt())
+        mutableIntStateOf(wordIndexAtProgress(document.progressPosition, lastIndex))
     }
+    val currentOnProgressChange by rememberUpdatedState(onProgressChange)
     var playing by remember(document.id) { mutableStateOf(false) }
     var standardMode by remember(document.id) {
         mutableStateOf(settings.defaultReader == ReaderMode.Standard)
@@ -333,9 +339,14 @@ private fun PreparedReaderScreen(
         }
     }
     LaunchedEffect(words.lastIndex) {
-        snapshotFlow {
-            (wordIndex * 100f / maxOf(1, words.lastIndex)).roundToInt()
-        }.distinctUntilChanged().collect(onProgressChange)
+        snapshotFlow { progressPosition(wordIndex, words.lastIndex) }
+            .distinctUntilChangedBy(::progressPercent)
+            .collect { currentOnProgressChange(it) }
+    }
+    DisposableEffect(document.id, words.lastIndex) {
+        onDispose {
+            currentOnProgressChange(progressPosition(wordIndex, words.lastIndex))
+        }
     }
     LaunchedEffect(standardMode, standardBlocks) {
         if (!standardMode || standardBlocks.isEmpty()) return@LaunchedEffect

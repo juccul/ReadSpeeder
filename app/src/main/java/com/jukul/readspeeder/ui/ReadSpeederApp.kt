@@ -73,6 +73,7 @@ import com.jukul.readspeeder.data.DocumentStore
 import com.jukul.readspeeder.data.LibraryStorage
 import com.jukul.readspeeder.data.LibraryDocument
 import com.jukul.readspeeder.data.ReadDocument
+import com.jukul.readspeeder.data.progressPercent
 import com.jukul.readspeeder.data.toLibraryDocument
 import com.jukul.readspeeder.ui.components.AddContentButton
 import com.jukul.readspeeder.ui.components.CollapsedTopBarHeight
@@ -432,14 +433,26 @@ internal fun ReadSpeederApp(
                             backgroundColor = hazeBackgroundColor,
                             topPadding = pageTopPadding,
                             holdPaused = readerHeld,
-                            onProgressChange = { progress ->
+                            onProgressChange = { progressPosition ->
+                                val progress = progressPercent(progressPosition)
                                 val index = documents.indexOfFirst { it.id == document.id }
                                 if (index >= 0 && documents[index].progress != progress) {
                                     documents[index] = documents[index].copy(progress = progress)
-                                    openedDocument = document.copy(progress = progress)
-                                    scope.launch(Dispatchers.IO) {
-                                        documentStore.updateProgress(document.id, progress)
-                                    }
+                                }
+                                val positionChanged =
+                                    openedDocument?.progressPosition != progressPosition
+                                if (openedDocumentId == document.id && positionChanged) {
+                                    openedDocument = document.copy(
+                                        progress = progress,
+                                        progressPosition = progressPosition,
+                                    )
+                                }
+                                if (positionChanged) {
+                                    documentStore.updateProgress(
+                                        document.id,
+                                        progress,
+                                        progressPosition,
+                                    )
                                 }
                             },
                         )
@@ -470,7 +483,9 @@ internal fun ReadSpeederApp(
                                     documentStore.setActiveDocument(document.id)
                                     openedDocumentId = document.id
                                 } catch (error: Exception) {
-                                    if (error is CancellationException) throw error
+                                    if (error is CancellationException) {
+                                        throw error
+                                    }
                                     snackbarHostState.showSnackbar(
                                         error.message
                                             ?: resources.getString(
@@ -822,7 +837,9 @@ internal fun ReadSpeederApp(
                                         documentStore.storage()
                                     }
                                 } catch (error: Exception) {
-                                    if (error is CancellationException) throw error
+                                    if (error is CancellationException) {
+                                        throw error
+                                    }
                                     snackbarHostState.showSnackbar(
                                         resources.getString(
                                             R.string.document_delete_failed,

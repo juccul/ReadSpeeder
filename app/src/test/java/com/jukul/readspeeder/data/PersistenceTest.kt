@@ -47,6 +47,16 @@ class PersistenceTest {
     }
 
     @Test
+    fun preciseProgressRestoresTheSameWordInLargeDocuments() {
+        val lastIndex = 149_999
+        val wordIndex = 83_417
+        val position = progressPosition(wordIndex, lastIndex)
+
+        assertEquals(wordIndex, wordIndexAtProgress(position, lastIndex))
+        assertEquals(56, progressPercent(position))
+    }
+
+    @Test
     fun truncatedDocumentCacheIsRejected() {
         val bytes = DocumentCodec.encode(
             ReadDocument("id", "Title", null, "Text"),

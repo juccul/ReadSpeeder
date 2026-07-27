@@ -43,8 +43,13 @@ internal class DocumentStore(context: Context) {
 
     fun load(id: String): ReadDocument {
         val stored = file(id).inputStream().buffered().use(DocumentCodec::decode)
+        val progress = preferences.getInt(progressKey(id), stored.progress).coerceIn(0, 100)
         return stored.copy(
-            progress = preferences.getInt(progressKey(id), stored.progress).coerceIn(0, 100),
+            progress = progress,
+            progressPosition = preferences.getInt(
+                progressPositionKey(id),
+                progress * (ProgressPositionScale / 100),
+            ).coerceIn(0, ProgressPositionScale),
         )
     }
 
@@ -73,11 +78,21 @@ internal class DocumentStore(context: Context) {
         preferences.edit {
             putString(IndexKey, JSONArray(ids).toString())
             putInt(progressKey(document.id), document.progress)
+            putInt(
+                progressPositionKey(document.id),
+                document.progressPosition.coerceIn(0, ProgressPositionScale),
+            )
         }
     }
 
-    fun updateProgress(id: String, progress: Int) {
-        preferences.edit { putInt(progressKey(id), progress.coerceIn(0, 100)) }
+    fun updateProgress(id: String, progress: Int, progressPosition: Int) {
+        preferences.edit {
+            putInt(progressKey(id), progress.coerceIn(0, 100))
+            putInt(
+                progressPositionKey(id),
+                progressPosition.coerceIn(0, ProgressPositionScale),
+            )
+        }
     }
 
     fun delete(id: String) {
@@ -90,6 +105,7 @@ internal class DocumentStore(context: Context) {
                 JSONArray(documentIds().filterNot { it == id }).toString(),
             )
             remove(progressKey(id))
+            remove(progressPositionKey(id))
             if (activeDocumentId() == id) remove(ActiveDocumentKey)
         }
     }
@@ -140,6 +156,7 @@ internal class DocumentStore(context: Context) {
 
     private fun file(id: String) = File(root, "${id.sha256()}.bin")
     private fun progressKey(id: String) = "progress_${id.sha256()}"
+    private fun progressPositionKey(id: String) = "progress_position_${id.sha256()}"
 
     private companion object {
         const val DirectoryName = "documents"
