@@ -84,5 +84,7 @@ dependencies {
     implementation(libs.androidx.profileinstaller)
     baselineProfile(project(":benchmark"))
     testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

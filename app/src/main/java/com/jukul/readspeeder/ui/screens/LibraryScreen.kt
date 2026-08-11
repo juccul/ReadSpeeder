@@ -24,6 +24,7 @@ internal fun LibraryScreen(
     documents: List<LibraryDocument>,
     searchQuery: String,
     sort: LibrarySort,
+    loadCover: (String) -> ByteArray?,
     onDocumentClick: (LibraryDocument) -> Unit,
     onDocumentLongClick: (LibraryDocument, Offset) -> Unit,
     modifier: Modifier = Modifier,
@@ -39,11 +40,13 @@ internal fun LibraryScreen(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(visibleDocuments) { document ->
+        items(visibleDocuments, key = LibraryDocument::id) { document ->
             DocumentCard(
+                documentId = document.id,
                 title = document.title,
                 author = document.author,
-                cover = document.cover,
+                hasCover = document.hasCover,
+                loadCover = loadCover,
                 progress = document.progress,
                 onClick = { onDocumentClick(document) },
                 onLongClick = { onDocumentLongClick(document, it) },

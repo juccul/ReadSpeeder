@@ -23,12 +23,12 @@ internal data class LibraryDocument(
     val id: String,
     val title: String,
     val author: String?,
-    val cover: ByteArray? = null,
+    val hasCover: Boolean = false,
     val progress: Int = 0,
 )
 
 internal fun ReadDocument.toLibraryDocument() =
-    LibraryDocument(id, title, author, cover, progress)
+    LibraryDocument(id, title, author, cover != null, progress)
 
 internal fun progressPosition(wordIndex: Int, lastIndex: Int): Int {
     if (lastIndex <= 0) return 0

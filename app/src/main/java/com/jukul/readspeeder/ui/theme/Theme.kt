@@ -49,7 +49,7 @@ private val ReadSpeederTypography = with(Typography()) {
     )
 }
 
-private val MonochromeColorScheme = darkColorScheme(
+private val DarkMonochromeColorScheme = darkColorScheme(
     primary = Color.White,
     onPrimary = Color.Black,
     primaryContainer = Color(0xFF303030),
@@ -100,6 +100,34 @@ private val MonochromeColorScheme = darkColorScheme(
     onTertiaryFixedVariant = Color(0xFF303030),
 )
 
+private val LightMonochromeColorScheme = lightColorScheme(
+    primary = Color.Black,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFD0D0D0),
+    onPrimaryContainer = Color.Black,
+    secondary = Color(0xFF303030),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFE8E8E8),
+    onSecondaryContainer = Color.Black,
+    tertiary = Color(0xFF202020),
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFDEDEDE),
+    onTertiaryContainer = Color.Black,
+    background = Color.White,
+    onBackground = Color.Black,
+    surface = Color.White,
+    onSurface = Color.Black,
+    surfaceVariant = Color(0xFFE4E4E4),
+    onSurfaceVariant = Color(0xFF383838),
+    surfaceTint = Color.Transparent,
+    error = Color.Black,
+    onError = Color.White,
+    errorContainer = Color(0xFFDEDEDE),
+    onErrorContainer = Color.Black,
+    outline = Color(0xFF747474),
+    outlineVariant = Color(0xFFC4C4C4),
+)
+
 @Composable
 internal fun ReadSpeederTheme(
     themeMode: ThemeMode = ThemeMode.System,
@@ -119,7 +147,8 @@ internal fun ReadSpeederTheme(
                 dynamicDarkColorScheme(context)
             dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
                 dynamicLightColorScheme(context)
-            !dynamicColor -> MonochromeColorScheme
+            !dynamicColor && darkTheme -> DarkMonochromeColorScheme
+            !dynamicColor -> LightMonochromeColorScheme
             darkTheme -> darkColorScheme()
             else -> lightColorScheme()
         }
@@ -128,8 +157,8 @@ internal fun ReadSpeederTheme(
     SideEffect {
         (view.context as? Activity)?.window?.let { window ->
             WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = dynamicColor && !darkTheme
-                isAppearanceLightNavigationBars = dynamicColor && !darkTheme
+                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightNavigationBars = !darkTheme
             }
         }
     }

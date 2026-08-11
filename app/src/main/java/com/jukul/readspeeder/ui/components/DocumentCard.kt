@@ -45,9 +45,11 @@ private class CardPointerState {
 
 @Composable
 internal fun DocumentCard(
+    documentId: String,
     title: String,
     author: String?,
-    cover: ByteArray?,
+    hasCover: Boolean,
+    loadCover: (String) -> ByteArray?,
     progress: Int,
     onClick: () -> Unit,
     onLongClick: (Offset) -> Unit,
@@ -55,11 +57,15 @@ internal fun DocumentCard(
 ) {
     val optionsLabel = stringResource(R.string.document_options)
     val pointerState = remember { CardPointerState() }
-    val coverImage by produceState<ImageBitmap?>(initialValue = null, cover) {
-        value = withContext(Dispatchers.Default) {
-            cover?.let {
-                BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap()
+    val coverImage by produceState<ImageBitmap?>(null, documentId, hasCover) {
+        value = if (hasCover) {
+            withContext(Dispatchers.IO) {
+                loadCover(documentId)?.let {
+                    BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap()
+                }
             }
+        } else {
+            null
         }
     }
     Column(

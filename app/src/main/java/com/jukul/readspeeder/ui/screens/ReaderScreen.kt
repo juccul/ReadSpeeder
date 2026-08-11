@@ -97,6 +97,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.jukul.readspeeder.R
 import com.jukul.readspeeder.data.AppSettings
 import com.jukul.readspeeder.data.DocumentChapter
@@ -120,9 +123,10 @@ import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+
+private const val ProgressSaveIntervalMillis = 2_000L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -209,6 +213,7 @@ private fun PreparedReaderScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val readerText = prepared.readerText
     val words = readerText.words
     val sentences = readerText.sentences
@@ -338,13 +343,21 @@ private fun PreparedReaderScreen(
             }
         }
     }
-    LaunchedEffect(words.lastIndex) {
-        snapshotFlow { progressPosition(wordIndex, words.lastIndex) }
-            .distinctUntilChangedBy(::progressPercent)
-            .collect { currentOnProgressChange(it) }
+    LaunchedEffect(document.id, words.lastIndex) {
+        while (true) {
+            delay(ProgressSaveIntervalMillis)
+            currentOnProgressChange(progressPosition(wordIndex, words.lastIndex))
+        }
     }
-    DisposableEffect(document.id, words.lastIndex) {
+    DisposableEffect(lifecycleOwner, document.id, words.lastIndex) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                currentOnProgressChange(progressPosition(wordIndex, words.lastIndex))
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
             currentOnProgressChange(progressPosition(wordIndex, words.lastIndex))
         }
     }

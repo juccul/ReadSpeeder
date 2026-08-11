@@ -507,6 +507,7 @@ internal fun ReadSpeederApp(
                             documents = documents,
                             searchQuery = librarySearchQuery.orEmpty(),
                             sort = settings.librarySort,
+                            loadCover = documentStore::loadCover,
                             contentPadding = PaddingValues(
                                 start = 16.dp,
                                 top = pageTopPadding + 16.dp,
