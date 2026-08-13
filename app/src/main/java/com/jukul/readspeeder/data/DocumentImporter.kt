@@ -18,9 +18,8 @@ import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
-import java.util.zip.ZipInputStream
 
-private const val MaxDocumentBytes = 50 * 1024 * 1024
+internal const val MaxDocumentBytes = 50 * 1024 * 1024
 private const val MaxExtractedCharacters = 5_000_000
 private const val MaxCoverDimension = 1_024
 private const val CoverQuality = 85
@@ -134,19 +133,7 @@ private fun extractPdf(stream: InputStream): ImportedContent =
     }
 
 private fun extractEpub(stream: InputStream): ImportedContent {
-    val entries = mutableMapOf<String, ByteArray>()
-    var totalBytes = 0
-    ZipInputStream(stream).use { zip ->
-        while (true) {
-            val entry = zip.nextEntry ?: break
-            if (!entry.isDirectory) {
-                val bytes = zip.readLimited(MaxDocumentBytes - totalBytes)
-                totalBytes += bytes.size
-                entries[entry.name.replace('\\', '/').trimStart('/')] = bytes
-            }
-            zip.closeEntry()
-        }
-    }
+    val entries = readEpubEntries(stream)
     val container = entries["META-INF/container.xml"]
         ?: error("Invalid EPUB: container.xml is missing")
     val packagePath = container.findAttribute("rootfile", "full-path")
