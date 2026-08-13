@@ -31,6 +31,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -56,6 +59,14 @@ internal fun DocumentCard(
     modifier: Modifier = Modifier,
 ) {
     val optionsLabel = stringResource(R.string.document_options)
+    val documentDescription = author
+        ?.takeIf { it.isNotBlank() }
+        ?.let { stringResource(R.string.document_by_author, title, it) }
+        ?: title
+    val progressDescription = stringResource(
+        R.string.document_progress,
+        progress.coerceIn(0, 100),
+    )
     val pointerState = remember { CardPointerState() }
     val coverImage by produceState<ImageBitmap?>(null, documentId, hasCover) {
         value = if (hasCover) {
@@ -91,7 +102,11 @@ internal fun DocumentCard(
                     onClick = onClick,
                     onLongClickLabel = optionsLabel,
                     onLongClick = { onLongClick(pointerState.pressPosition) },
-                ),
+                )
+                .semantics(mergeDescendants = true) {
+                    contentDescription = documentDescription
+                    stateDescription = progressDescription
+                },
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
             ),
