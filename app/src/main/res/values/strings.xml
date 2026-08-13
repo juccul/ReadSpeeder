@@ -17,6 +17,8 @@
     <string name="start_reading">Start reading</string>
     <string name="add_document">Add document</string>
     <string name="document_options">Document options</string>
+    <string name="document_by_author">%1$s, by %2$s</string>
+    <string name="document_progress">%1$d%% complete</string>
     <string name="change_title">Change title</string>
     <string name="change_author">Change author</string>
     <string name="title">Title</string>
