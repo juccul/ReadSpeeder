@@ -14,6 +14,7 @@
     <string name="add_content">Add content</string>
     <string name="paste_text">Paste text</string>
     <string name="paste_text_hint">Paste or type text here</string>
+    <string name="paste_text_limit">Up to %1$d characters</string>
     <string name="start_reading">Start reading</string>
     <string name="add_document">Add document</string>
     <string name="document_options">Document options</string>
