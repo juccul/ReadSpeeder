@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -83,6 +84,7 @@ import com.jukul.readspeeder.ui.components.NavigationMenuOverlay
 import com.jukul.readspeeder.ui.components.ReadSpeederTopBar
 import com.jukul.readspeeder.ui.components.SortMenuOverlay
 import com.jukul.readspeeder.ui.screens.LibraryScreen
+import com.jukul.readspeeder.ui.screens.InfoScreen
 import com.jukul.readspeeder.ui.screens.PasteTextScreen
 import com.jukul.readspeeder.ui.screens.ReaderScreen
 import com.jukul.readspeeder.ui.screens.SettingsScreen
@@ -107,6 +109,7 @@ private val SupportedDocumentTypes = arrayOf(
 internal enum class AppDestination(val titleRes: Int, val icon: ImageVector) {
     Library(R.string.library, Icons.Default.Home),
     Settings(R.string.settings, Icons.Default.Settings),
+    Info(R.string.info, Icons.Default.Info),
 }
 
 private enum class DocumentEditField { Title, Author }
@@ -579,6 +582,16 @@ internal fun ReadSpeederApp(
                             }
                         },
                     )
+
+                    AppDestination.Info -> InfoScreen(
+                        contentPadding = PaddingValues(
+                            start = 8.dp,
+                            top = pageTopPadding + 8.dp,
+                            end = 8.dp,
+                            bottom = innerPadding.calculateBottomPadding() + 16.dp,
+                        ),
+                        hazeState = state.hazeState,
+                    )
                 }
             }
         }
@@ -617,7 +630,7 @@ internal fun ReadSpeederApp(
                         documentId == null && !showPasteText,
                 showBackNavigation =
                     documentId != null || showPasteText ||
-                        destination == AppDestination.Settings,
+                        destination != AppDestination.Library,
                 forceCollapsed = documentId != null || showPasteText,
                 searchQuery = librarySearchQuery,
                 onNavigationClick = {
@@ -627,7 +640,7 @@ internal fun ReadSpeederApp(
                             openedDocumentId = null
                         }
                         pastingText -> pastingText = false
-                        currentDestination == AppDestination.Settings ->
+                        currentDestination != AppDestination.Library ->
                             currentDestination = AppDestination.Library
                         else -> navigationMenuExpanded = !navigationMenuExpanded
                     }
