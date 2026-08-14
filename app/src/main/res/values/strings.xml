@@ -13,7 +13,7 @@
     <string name="settings">Settings</string>
     <string name="info">Info</string>
     <string name="free_and_oss">Free and open-source software</string>
-    <string name="free_and_oss_description">ReadSpeeder is free to use, has no ads, and its source code is available to everyone.</string>
+    <string name="free_and_oss_description">ReadSpeeder is free to use, has no ads, and is licensed under GNU GPL version 3.</string>
     <string name="version">Version</string>
     <string name="links">Links</string>
     <string name="source_code">Source code</string>
@@ -21,7 +21,10 @@
     <string name="support_development">Support development</string>
     <string name="support_development_summary">Buy juckul a coffee on Ko-fi</string>
     <string name="open_source_licenses">Open-source licenses</string>
-    <string name="open_source_licenses_summary">Licenses and notices that must accompany distributed components.</string>
+    <string name="open_source_licenses_summary">ReadSpeeder’s license and notices that must accompany distributed components.</string>
+    <string name="readspeeder_license">ReadSpeeder</string>
+    <string name="gnu_gpl_3">GNU General Public License v3.0</string>
+    <string name="gnu_gpl_summary">Licensed under GPL-3.0-only</string>
     <string name="apache_license_2">Apache License 2.0</string>
     <string name="apache_license_summary">License text for Apache-licensed components</string>
     <string name="pdfbox_notices">PDFBox notices and third-party licenses</string>

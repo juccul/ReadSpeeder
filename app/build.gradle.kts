@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.jukul.readspeeder"
+    namespace = "com.juckul.readspeeder"
     compileSdk {
         version = release(37) {
             minorApiLevel = 1
@@ -13,7 +13,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.jukul.readspeeder"
+        applicationId = "com.juckul.readspeeder"
         minSdk = 24
         targetSdk = 36
         versionCode = 2

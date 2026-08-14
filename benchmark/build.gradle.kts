@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.jukul.readspeeder.benchmark"
+    namespace = "com.juckul.readspeeder.benchmark"
     compileSdk = 36
     targetProjectPath = ":app"
 

@@ -2,8 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <provider
-            android:name="com.jukul.readspeeder.data.QualificationDocumentProvider"
-            android:authorities="com.jukul.readspeeder.test.documents"
+            android:name="com.juckul.readspeeder.data.QualificationDocumentProvider"
+            android:authorities="com.juckul.readspeeder.test.documents"
             android:exported="false" />
     </application>
 </manifest>

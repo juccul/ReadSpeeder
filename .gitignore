@@ -8,3 +8,18 @@ captures/
 .externalNativeBuild/
 .cxx/
 .DS_Store
+
+# Local signing and service credentials
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+keystore.properties
+signing.properties
+.env
+.env.*
+
+# Locally exported Android artifacts
+*.apk
+*.aab

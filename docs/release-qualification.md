@@ -12,6 +12,15 @@ The `Release qualification` workflow runs on every pull request and on `main`:
 
 The branch-protection rule for `main` must require the build job and all five instrumentation jobs.
 
+## Public repository
+
+- [ ] Confirm the root GPL-3.0-only license and README license link are present.
+- [ ] Confirm the repository description, topics, and default branch are correct.
+- [ ] Require the release-qualification checks and at least one approving review on `main`.
+- [ ] Confirm issue forms, the pull-request template, funding link, and privacy policy render correctly on GitHub.
+- [ ] Review the full Git history for credentials, private documents, and personal information before changing visibility.
+- [ ] Create release notes from `CHANGELOG.md` and publish signed artifacts through the official release process only.
+
 ## Release artifact
 
 - [ ] Build the production AAB through the secret-backed upload signing configuration.

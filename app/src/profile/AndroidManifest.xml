@@ -6,7 +6,7 @@
             android:name=".BenchmarkSeederReceiver"
             android:exported="true">
             <intent-filter>
-                <action android:name="com.jukul.readspeeder.BENCHMARK_SEED" />
+                <action android:name="com.juckul.readspeeder.BENCHMARK_SEED" />
             </intent-filter>
         </receiver>
     </application>
