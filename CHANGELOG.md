@@ -2,7 +2,7 @@
 
 Notable changes to ReadSpeeder are documented here.
 
-## Unreleased
+## 1.0.0 - 2026-08-15
 
 ### Added
 
